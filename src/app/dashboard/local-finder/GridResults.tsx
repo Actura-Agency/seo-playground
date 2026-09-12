@@ -218,7 +218,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
             {ringStats.map((r) => (
               <div key={r.ring} className="flex items-center gap-3">
                 <span className="text-[10px] font-black text-slate-400 w-20 shrink-0 tabular-nums">
-                  {r.ring === 0 ? 'Center' : `~${r.distanceKm} km`}
+                  {r.ring === 0 ? 'Center' : `~${(r.distanceKm / 1.609344).toFixed(1)} mi`}
                 </span>
                 <div className="flex-1 h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div

@@ -166,7 +166,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
             )}
           </div>
           <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-            Target: {entry.target} · {entry.spacing_km} km
+            Target: {entry.target} · {(entry.spacing_km / 1.609344).toFixed(2)} mi
             {entry.cost !== undefined ? ` · $${entry.cost.toFixed(4)}` : ''}
           </p>
           {entry.summary && (

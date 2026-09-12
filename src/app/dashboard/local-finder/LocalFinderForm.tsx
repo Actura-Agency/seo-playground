@@ -49,7 +49,18 @@ function formatLiveDuration(totalPoints: number) {
   return `~${Math.ceil(seconds / 60)} min`;
 }
 
-function GridPreview({ size, spacingKm }: { size: number; spacingKm: number }) {
+// 1 mile = 1.609344 km (exact, international mile).
+const KM_PER_MILE = 1.609344;
+const MILE_SPACING_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+
+/** Snaps an arbitrary miles value (e.g. converted from an old saved km spacing) to the nearest preset option. */
+function nearestMilePreset(miles: number): number {
+  return MILE_SPACING_OPTIONS.reduce((closest, option) =>
+    Math.abs(option - miles) < Math.abs(closest - miles) ? option : closest,
+  );
+}
+
+function GridPreview({ size, spacingMiles }: { size: number; spacingMiles: number }) {
   const half = Math.floor(size / 2);
   return (
     <div className="flex flex-col items-center gap-2 py-2">
@@ -71,7 +82,7 @@ function GridPreview({ size, spacingKm }: { size: number; spacingKm: number }) {
         })}
       </div>
       <p className="text-[10px] text-slate-400 font-medium">
-        {size}×{size} points · {spacingKm} km spacing · ~{((size - 1) * spacingKm).toFixed(1)} km coverage
+        {size}×{size} points · {spacingMiles} mi spacing · ~{((size - 1) * spacingMiles).toFixed(1)} mi coverage
       </p>
     </div>
   );
@@ -84,7 +95,12 @@ export default function LocalFinderForm({ defaults }: Props) {
   const [coordinate, setCoordinate] = useState(defaults.locationCoordinate || defaults.defaultCenter);
   const [isLoading, setIsLoading] = useState(false);
   const [gridSize, setGridSize] = useState(parseInt(defaults.gridSize ?? '5', 10));
-  const [spacingKm, setSpacingKm] = useState(parseFloat(defaults.spacingKm ?? '1'));
+  // The grid-generation math (generateGridCoords) still works in kilometers — spacingKm is
+  // derived from the user-facing miles value right before it's used, per KM_PER_MILE above.
+  const [spacingMiles, setSpacingMiles] = useState(
+    nearestMilePreset(parseFloat(defaults.spacingKm ?? String(KM_PER_MILE)) / KM_PER_MILE),
+  );
+  const spacingKm = spacingMiles * KM_PER_MILE;
   const [queueMode, setQueueMode] = useState<QueueMode>((defaults.queueMode as QueueMode) || 'live');
 
   const osOptions =
@@ -204,19 +220,16 @@ export default function LocalFinderForm({ defaults }: Props) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Spacing (km)</label>
+              <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Spacing (mi)</label>
+              <input type="hidden" name="spacing_km" value={spacingKm} />
               <select
-                name="spacing_km"
-                value={spacingKm}
-                onChange={(e) => setSpacingKm(parseFloat(e.target.value))}
+                value={spacingMiles}
+                onChange={(e) => setSpacingMiles(parseFloat(e.target.value))}
                 className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800"
               >
-                <option value="0.5">0.5 km</option>
-                <option value="1">1 km</option>
-                <option value="2">2 km</option>
-                <option value="3">3 km</option>
-                <option value="5">5 km</option>
-                <option value="10">10 km</option>
+                {MILE_SPACING_OPTIONS.map((mi) => (
+                  <option key={mi} value={mi}>{mi} mi</option>
+                ))}
               </select>
             </div>
           </div>
@@ -224,7 +237,7 @@ export default function LocalFinderForm({ defaults }: Props) {
           {/* Grid preview */}
           <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 text-center">Grid preview</p>
-            <GridPreview size={gridSize} spacingKm={spacingKm} />
+            <GridPreview size={gridSize} spacingMiles={spacingMiles} />
           </div>
 
           {/* Queue mode */}

@@ -226,7 +226,7 @@ export default function MapPicker({ coordinate, onChange, showGrid, gridSize, sp
       />
       {showGrid && coordinate && gridSize && spacingKm && (
         <p className="text-[11px] text-slate-400 -mt-1">
-          {gridSize}×{gridSize} grid · {spacingKm < 1 ? `${spacingKm * 1000} m` : `${spacingKm} km`} spacing · {gridSize ** 2} points
+          {gridSize}×{gridSize} grid · {(spacingKm / 1.609344).toFixed(2)} mi spacing · {gridSize ** 2} points
         </p>
       )}
     </>
