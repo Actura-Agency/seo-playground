@@ -19,6 +19,14 @@ const sections = [
     ],
   },
   {
+    label: 'SERP',
+    items: [
+      { name: 'Geo-Grid Ranking', href: '/dashboard/geo-grid', icon: Grid3X3 },
+      { name: 'SERP Checker', href: '/dashboard/serp', icon: Globe },
+      { name: 'Local Finder', href: '/dashboard/local-finder', icon: MapPin },
+    ],
+  },
+  {
     label: 'Analytics',
     items: [
       { name: 'Ranked Keywords', href: '/dashboard/ranked-keywords', icon: TrendingUp },
@@ -60,14 +68,6 @@ const sections = [
       { name: 'History', href: '/dashboard/backlinks/history', icon: History },
       { name: 'Bulk Backlinks', href: '/dashboard/backlinks/bulk-backlinks', icon: BarChart3 },
       { name: 'Bulk Ref. Domains', href: '/dashboard/backlinks/bulk-referring-domains', icon: Layers },
-    ],
-  },
-  {
-    label: 'SERP',
-    items: [
-      { name: 'SERP Checker', href: '/dashboard/serp', icon: Globe },
-      { name: 'Local Finder', href: '/dashboard/local-finder', icon: MapPin },
-      { name: 'Geo-Grid Ranking', href: '/dashboard/geo-grid', icon: Grid3X3 },
     ],
   },
   {
