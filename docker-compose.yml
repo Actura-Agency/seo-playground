@@ -2,7 +2,8 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      # Bound to localhost only — not exposed to the LAN/internet
+      - "127.0.0.1:3000:3000"
     volumes:
       # SQLite database — persisted in ./data/ next to this file
       - ./data:/data
