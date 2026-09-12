@@ -15,13 +15,15 @@ interface Props {
 
 function rankColor(rank: number | null): string {
   if (rank === null) return '#94a3b8';
-  if (rank === 1)    return '#059669';
-  if (rank <= 3)     return '#10b981';
-  if (rank <= 7)     return '#14b8a6';
-  if (rank <= 10)    return '#3b82f6';
-  if (rank <= 15)    return '#f59e0b';
-  if (rank <= 20)    return '#f97316';
-  return '#ef4444';
+  if (rank === 1) return '#1A6600';
+  if (rank === 2) return '#59810A';
+  if (rank === 3) return '#969C15';
+  if (rank === 4) return '#CBB21D';
+  if (rank === 5) return '#FFC826';
+  if (rank === 6) return '#EF9E1E';
+  if (rank === 7) return '#DD7015';
+  if (rank === 8) return '#CC430D';
+  return '#BA1604';
 }
 
 function rankTextColor(rank: number): string {

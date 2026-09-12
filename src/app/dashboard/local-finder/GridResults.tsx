@@ -17,13 +17,15 @@ interface Props {
 
 function rankColor(rank: number | null): string {
   if (rank === null) return '#94a3b8';
-  if (rank === 1)    return '#059669';
-  if (rank <= 3)     return '#10b981';
-  if (rank <= 7)     return '#14b8a6';
-  if (rank <= 10)    return '#3b82f6';
-  if (rank <= 15)    return '#f59e0b';
-  if (rank <= 20)    return '#f97316';
-  return '#ef4444';
+  if (rank === 1) return '#1A6600';
+  if (rank === 2) return '#59810A';
+  if (rank === 3) return '#969C15';
+  if (rank === 4) return '#CBB21D';
+  if (rank === 5) return '#FFC826';
+  if (rank === 6) return '#EF9E1E';
+  if (rank === 7) return '#DD7015';
+  if (rank === 8) return '#CC430D';
+  return '#BA1604';
 }
 
 export default function GridResults({ results, gridSize, spacingKm, keyword, target, cost }: Props) {
@@ -36,13 +38,15 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
   const ringStats = useMemo(() => computeRingStats(results, gridSize, spacingKm), [results, gridSize, spacingKm]);
 
   const legend = [
-    { color: '#059669', label: '#1' },
-    { color: '#10b981', label: '#2-3' },
-    { color: '#14b8a6', label: '#4-7' },
-    { color: '#3b82f6', label: '#8-10' },
-    { color: '#f59e0b', label: '#11-15' },
-    { color: '#f97316', label: '#16-20' },
-    { color: '#ef4444', label: '#21+' },
+    { color: '#1A6600', label: '#1' },
+    { color: '#59810A', label: '#2' },
+    { color: '#969C15', label: '#3' },
+    { color: '#CBB21D', label: '#4' },
+    { color: '#FFC826', label: '#5' },
+    { color: '#EF9E1E', label: '#6' },
+    { color: '#DD7015', label: '#7' },
+    { color: '#CC430D', label: '#8' },
+    { color: '#BA1604', label: '#9+' },
     { color: '#94a3b8', label: 'Not found' },
   ];
 
