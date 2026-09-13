@@ -16,6 +16,19 @@ export interface LocalPackItem {
   cid?: string;
 }
 
+/**
+ * Keeps only organic (non-sponsored) local-pack results, then renumbers rank_group sequentially
+ * so a removed ad slot doesn't leave a gap (e.g. an ad at #1 shouldn't push the real top organic
+ * result to read as #2). A business that also appears organically elsewhere in the same list
+ * keeps that organic entry — only the paid entry itself is ever dropped.
+ */
+function excludeSponsored<T extends { type: string; is_paid?: boolean; rank_group: number }>(items: T[]): T[] {
+  return items
+    .filter((i) => i.type === 'local_pack' && !i.is_paid)
+    .sort((a, b) => a.rank_group - b.rank_group)
+    .map((item, idx) => ({ ...item, rank_group: idx + 1 }));
+}
+
 export function generateGridCoords(
   centerLat: number, centerLng: number, gridSize: number, spacingKm: number,
 ) {
@@ -78,7 +91,7 @@ async function requestGridPoint(
   if (!task || task.status_code !== 20000) {
     return { items: [], cost: 0, error: task?.status_message ?? 'no task in response' };
   }
-  const items = (task.result?.[0]?.items ?? []).filter((i) => i.type === 'local_pack');
+  const items = excludeSponsored(task.result?.[0]?.items ?? []);
   return { items, cost: task.cost ?? 0 };
 }
 

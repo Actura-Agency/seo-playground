@@ -17,10 +17,24 @@ interface DFSTaskGetResponse {
         url?: string;
         place_id?: string;
         cid?: string;
+        is_paid?: boolean;
         rating?: { value?: number; votes_count?: number };
       }>;
     }>;
   }>;
+}
+
+/**
+ * Keeps only organic (non-sponsored) local-pack results, then renumbers rank_group sequentially
+ * so a removed ad slot doesn't leave a gap (e.g. an ad at #1 shouldn't push the real top organic
+ * result to read as #2). A business that also appears organically elsewhere in the same list
+ * keeps that organic entry — only the paid entry itself is ever dropped.
+ */
+function excludeSponsored<T extends { type: string; is_paid?: boolean; rank_group: number }>(items: T[]): T[] {
+  return items
+    .filter((i) => i.type === 'local_pack' && !i.is_paid)
+    .sort((a, b) => a.rank_group - b.rank_group)
+    .map((item, idx) => ({ ...item, rank_group: idx + 1 }));
 }
 
 export async function GET(
@@ -69,9 +83,10 @@ export async function GET(
         const task = data.tasks?.[0];
         // Still in queue → not ready yet
         if (!task || STILL_PROCESSING.has(task.status_code ?? 0)) return { tp, ready: false, items: [] };
-        // Success or permanent error → mark as done (empty items for errors)
+        // Success or permanent error → mark as done (empty items for errors). Sponsored/paid
+        // local-pack entries are excluded from ranking entirely — see excludeSponsored().
         const rawItems = task.status_code === 20000
-          ? (task.result?.[0]?.items ?? []).filter((i) => i.type === 'local_pack')
+          ? excludeSponsored(task.result?.[0]?.items ?? [])
           : [];
         return { tp, ready: true, items: rawItems };
       } catch {
