@@ -206,19 +206,8 @@ export default function LocalFinderForm({ defaults }: Props) {
       {isGrid ? (
         /* Grid-specific fields */
         <>
-          {/* Language */}
-          <div>
-            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">
-              Language <span className="text-red-400">*</span>
-            </label>
-            <select
-              name="language"
-              defaultValue={defaults.language || 'English'}
-              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800"
-            >
-              {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-            </select>
-          </div>
+          {/* Language: always English for geo-grid, so no field is shown — see feedback that it added no value. */}
+          <input type="hidden" name="language" value="English" />
 
           {/* Grid size + spacing */}
           <div className="grid grid-cols-2 gap-4">
