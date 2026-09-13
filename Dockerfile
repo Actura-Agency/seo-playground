@@ -15,6 +15,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time, so this
+# must be passed as a build ARG (see docker-compose.yml), not a runtime env var.
+ARG NEXT_PUBLIC_CARTO_API_KEY
+ENV NEXT_PUBLIC_CARTO_API_KEY=$NEXT_PUBLIC_CARTO_API_KEY
+
 RUN npm run build
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────────────

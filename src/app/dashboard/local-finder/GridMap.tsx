@@ -121,9 +121,10 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
       );
       mapRef.current = map;
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`, {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
         maxZoom: 19,
+        detectRetina: true,
       }).addTo(map);
 
       // Cell size based on grid
@@ -146,7 +147,7 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
           <div style="
             width:${cellPx}px;height:${cellPx}px;
             background:${color};
-            border-radius:${Math.round(cellPx * 0.22)}px;
+            border-radius:50%;
             display:flex;align-items:center;justify-content:center;
             font-size:${fontSize}px;font-weight:900;color:white;
             font-family:system-ui,sans-serif;

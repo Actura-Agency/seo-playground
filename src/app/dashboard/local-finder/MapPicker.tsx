@@ -65,17 +65,19 @@ export default function MapPicker({ coordinate, onChange, showGrid, gridSize, sp
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
+      // Geographic center of the contiguous US — used only when no coordinate has been chosen or saved.
       const [defaultLat, defaultLng] = coordinate
         ? coordinate.split(',').map(Number)
-        : [48.8566, 2.3522];
+        : [39.8283, -98.5795];
 
       const map = L.map(containerRef.current!).setView([defaultLat, defaultLng], 12);
       mapRef.current = map;
       gridLayerRef.current = L.layerGroup().addTo(map);
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`, {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
         maxZoom: 19,
+        detectRetina: true,
       }).addTo(map);
 
       if (coordinate) {
