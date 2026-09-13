@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Search, Globe, Settings, MapPin, FileSearch2,
   TrendingUp, Link2, Users, BarChart2, Activity, GitMerge, Clock, FolderKanban, Anchor,
   Gauge, Lightbulb, BrainCircuit, MessageSquare, Star, Flame, Cpu, ShieldCheck, Grid3X3,
   Sparkles, Target, Layers, Network, LineChart, Tag, ScanText,
   History, Copy, BarChart3, BookOpen, Server, Bot, Radar, Eye, Waypoints, Megaphone,
+  ChevronDown,
 } from 'lucide-react';
 
 const sections = [
@@ -105,8 +107,46 @@ const sections = [
   },
 ];
 
+function isItemActive(pathname: string, item: { href: string; exact?: boolean }): boolean {
+  return item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/');
+}
+
+const COLLAPSE_STORAGE_KEY = 'sidebar-collapsed-sections';
+
 export default function Sidebar() {
   const pathname = usePathname();
+  // Starts with nothing collapsed (matches server-rendered HTML) — the real default (only the
+  // active section open, or whatever the user last chose) is applied client-side right after
+  // mount, to avoid a hydration mismatch from reading localStorage during the initial render.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSE_STORAGE_KEY);
+      if (saved) {
+        setCollapsed(new Set(JSON.parse(saved) as string[]));
+        return;
+      }
+    } catch {
+      // ignore — fall through to the computed default below
+    }
+    const activeSection = sections.find((s) => s.items.some((item) => isItemActive(pathname, item)));
+    setCollapsed(new Set(sections.filter((s) => s.label !== activeSection?.label).map((s) => s.label)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function toggleSection(label: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      try {
+        localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(next)));
+      } catch {
+        // localStorage unavailable (private browsing, etc.) — collapse state just won't persist
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-full w-60 flex-col border-r border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 select-none overflow-y-auto shrink-0 scrollbar-thin">
@@ -120,39 +160,49 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-4">
-        {sections.map((section) => (
-          <div key={section.label}>
-            <p className="text-[10px] font-semibold text-slate-300 dark:text-slate-600 uppercase tracking-[0.15em] px-3 mb-1">
-              {section.label}
-            </p>
-            <div className="space-y-px">
-              {section.items.map((item) => {
-                const isActive = item.exact
-                  ? pathname === item.href
-                  : pathname === item.href || pathname.startsWith(item.href + '/');
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={`group flex items-center px-3 py-2 text-sm rounded-lg transition-all duration-150 ${
-                      isActive
-                        ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-semibold'
-                        : 'text-slate-500 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-                    }`}
-                  >
-                    <item.icon className={`mr-2.5 h-[15px] w-[15px] shrink-0 transition-colors ${
-                      isActive
-                        ? 'text-blue-500 dark:text-blue-400'
-                        : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'
-                    }`} />
-                    {item.name}
-                  </Link>
-                );
-              })}
+      <nav className="flex-1 px-3 py-4 space-y-1">
+        {sections.map((section) => {
+          const isCollapsed = collapsed.has(section.label);
+          return (
+            <div key={section.label} className="py-1.5">
+              <button
+                type="button"
+                onClick={() => toggleSection(section.label)}
+                className="w-full flex items-center justify-between px-3 mb-1 group/section"
+              >
+                <p className="text-[10px] font-semibold text-slate-300 dark:text-slate-600 uppercase tracking-[0.15em] group-hover/section:text-slate-400 dark:group-hover/section:text-slate-500 transition-colors">
+                  {section.label}
+                </p>
+                <ChevronDown className={`h-3 w-3 text-slate-300 dark:text-slate-600 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+              </button>
+              {!isCollapsed && (
+                <div className="space-y-px">
+                  {section.items.map((item) => {
+                    const isActive = isItemActive(pathname, item);
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`group flex items-center px-3 py-2 text-sm rounded-lg transition-all duration-150 ${
+                          isActive
+                            ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-semibold'
+                            : 'text-slate-500 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+                        }`}
+                      >
+                        <item.icon className={`mr-2.5 h-[15px] w-[15px] shrink-0 transition-colors ${
+                          isActive
+                            ? 'text-blue-500 dark:text-blue-400'
+                            : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'
+                        }`} />
+                        {item.name}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
     </div>
   );
