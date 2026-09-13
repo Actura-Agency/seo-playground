@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 
 interface Props {
   coordinate: string;
@@ -36,140 +37,76 @@ function calcGridCoords(
   return coords;
 }
 
-export default function MapPicker({ coordinate, onChange, showGrid, gridSize, spacingKm }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<import('leaflet').Map | null>(null);
-  const markerRef = useRef<import('leaflet').Marker | null>(null);
-  const gridLayerRef = useRef<import('leaflet').LayerGroup | null>(null);
+/** Keeps the map centered on the picked coordinate and fits/zooms to the grid preview when it's shown. */
+function MapController({
+  coordinate, gridPoints, onExpand,
+}: {
+  coordinate: string;
+  gridPoints: { lat: number; lng: number }[];
+  onExpand: () => void;
+}) {
+  const map = useMap();
 
+  useEffect(() => {
+    if (!map || !coordinate) return;
+    const [lat, lng] = coordinate.split(',').map(Number);
+    if (isNaN(lat) || isNaN(lng)) return;
+    map.setCenter({ lat, lng });
+  }, [map, coordinate]);
+
+  useEffect(() => {
+    if (!map || gridPoints.length < 2) return;
+    const bounds = new google.maps.LatLngBounds();
+    gridPoints.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 28);
+    onExpand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, gridPoints]);
+
+  return null;
+}
+
+/** Nudges the Maps JS API to redraw after the container's CSS height transition finishes (260 <-> 420). */
+function ResizeOnExpand({ expanded }: { expanded: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const t = setTimeout(() => google.maps.event.trigger(map, 'resize'), 220);
+    return () => clearTimeout(t);
+  }, [map, expanded]);
+  return null;
+}
+
+export default function MapPicker({ coordinate, onChange, showGrid, gridSize, spacingKm }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
-  const [geocoding, setGeocodng] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [geoError, setGeoError] = useState('');
 
   const mapHeight = expanded ? 420 : 260;
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  // ── Init map ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    let isMounted = true;
+  // Geographic center of the contiguous US — used only when no coordinate has been chosen or saved.
+  const [defaultLat, defaultLng] = coordinate
+    ? coordinate.split(',').map(Number)
+    : [39.8283, -98.5795];
 
-    import('leaflet').then((L) => {
-      if (!isMounted || !containerRef.current || mapRef.current) return;
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      });
-
-      // Geographic center of the contiguous US — used only when no coordinate has been chosen or saved.
-      const [defaultLat, defaultLng] = coordinate
-        ? coordinate.split(',').map(Number)
-        : [39.8283, -98.5795];
-
-      const map = L.map(containerRef.current!).setView([defaultLat, defaultLng], 12);
-      mapRef.current = map;
-      gridLayerRef.current = L.layerGroup().addTo(map);
-
-      L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`, {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
-        detectRetina: true,
-      }).addTo(map);
-
-      if (coordinate) {
-        markerRef.current = L.marker([defaultLat, defaultLng]).addTo(map);
-      }
-
-      map.on('click', (e) => {
-        const { lat, lng } = e.latlng;
-        const rounded = `${lat.toFixed(6)},${lng.toFixed(6)}`;
-        if (markerRef.current) {
-          markerRef.current.setLatLng([lat, lng]);
-        } else {
-          markerRef.current = L.marker([lat, lng]).addTo(map);
-        }
-        onChange(rounded);
-        setExpanded(true);
-      });
-    });
-
-    return () => {
-      isMounted = false;
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        markerRef.current = null;
-        gridLayerRef.current = null;
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Invalidate map size on height change ──────────────────────────────────
-  useEffect(() => {
-    if (!mapRef.current) return;
-    setTimeout(() => mapRef.current?.invalidateSize(), 200);
-  }, [expanded]);
-
-  // ── Sync pin when coordinate changes externally ───────────────────────────
-  useEffect(() => {
-    if (!mapRef.current || !coordinate) return;
+  const markerPosition = useMemo(() => {
+    if (!coordinate) return null;
     const [lat, lng] = coordinate.split(',').map(Number);
-    if (isNaN(lat) || isNaN(lng)) return;
-    import('leaflet').then((L) => {
-      if (!mapRef.current) return;
-      if (markerRef.current) {
-        markerRef.current.setLatLng([lat, lng]);
-      } else {
-        markerRef.current = L.marker([lat, lng]).addTo(mapRef.current!);
-      }
-      mapRef.current.setView([lat, lng], mapRef.current.getZoom());
-    });
+    return isNaN(lat) || isNaN(lng) ? null : { lat, lng };
   }, [coordinate]);
 
-  // ── Draw grid overlay ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!mapRef.current || !gridLayerRef.current) return;
-    gridLayerRef.current.clearLayers();
-
-    if (!showGrid || !coordinate || !gridSize || !spacingKm) return;
-
+  const gridPreviewPoints = useMemo(() => {
+    if (!showGrid || !coordinate || !gridSize || !spacingKm) return [];
     const [centerLat, centerLng] = coordinate.split(',').map(Number);
-    if (isNaN(centerLat) || isNaN(centerLng)) return;
-
-    import('leaflet').then((L) => {
-      if (!mapRef.current || !gridLayerRef.current) return;
-      const coords = calcGridCoords(centerLat, centerLng, gridSize, spacingKm);
-      const bounds: [number, number][] = [];
-
-      coords.forEach(({ lat, lng, isCenter }) => {
-        bounds.push([lat, lng]);
-        L.circleMarker([lat, lng], {
-          radius: isCenter ? 9 : 6,
-          fillColor: isCenter ? '#3b82f6' : '#94a3b8',
-          color: isCenter ? '#1d4ed8' : '#475569',
-          weight: 1.5,
-          opacity: 0.9,
-          fillOpacity: isCenter ? 0.7 : 0.35,
-        }).addTo(gridLayerRef.current!);
-      });
-
-      if (bounds.length > 1) {
-        const llBounds = L.latLngBounds(bounds);
-        mapRef.current!.fitBounds(llBounds, { padding: [28, 28], maxZoom: 15 });
-        setExpanded(true);
-      }
-    });
+    if (isNaN(centerLat) || isNaN(centerLng)) return [];
+    return calcGridCoords(centerLat, centerLng, gridSize, spacingKm);
   }, [showGrid, coordinate, gridSize, spacingKm]);
 
-  // ── Geocoding ─────────────────────────────────────────────────────────────
   async function handleGeocode() {
-    if (!query.trim() || !mapRef.current) return;
-    setGeocodng(true);
+    if (!query.trim()) return;
+    setGeocoding(true);
     setGeoError('');
     try {
       const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
@@ -177,28 +114,17 @@ export default function MapPicker({ coordinate, onChange, showGrid, gridSize, sp
       const results: NominatimResult[] = await res.json();
       if (!results.length) { setGeoError('Location not found.'); return; }
       const { lat, lon } = results[0];
-      const coord = `${parseFloat(lat).toFixed(6)},${parseFloat(lon).toFixed(6)}`;
-      const L = await import('leaflet');
-      const latN = parseFloat(lat), lngN = parseFloat(lon);
-      if (markerRef.current) {
-        markerRef.current.setLatLng([latN, lngN]);
-      } else {
-        markerRef.current = L.marker([latN, lngN]).addTo(mapRef.current!);
-      }
-      mapRef.current.setView([latN, lngN], 13);
-      onChange(coord);
+      onChange(`${parseFloat(lat).toFixed(6)},${parseFloat(lon).toFixed(6)}`);
       setExpanded(true);
     } catch {
       setGeoError('Geocoding failed. Try again.');
     } finally {
-      setGeocodng(false);
+      setGeocoding(false);
     }
   }
 
   return (
     <>
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossOrigin="" />
-
       {/* Geocoding search — div to avoid nested <form> */}
       <div className="flex gap-2">
         <input
@@ -221,11 +147,56 @@ export default function MapPicker({ coordinate, onChange, showGrid, gridSize, sp
       {geoError && <p className="text-[11px] text-red-500 -mt-1">{geoError}</p>}
 
       {/* Map */}
-      <div
-        ref={containerRef}
-        className="w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 transition-all duration-300"
-        style={{ height: mapHeight }}
-      />
+      {apiKey ? (
+        <div
+          className="w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 transition-all duration-300"
+          style={{ height: mapHeight }}
+        >
+          <APIProvider apiKey={apiKey}>
+            <Map
+              mapId="f66d288b089a743094f4de9b"
+              defaultCenter={{ lat: defaultLat, lng: defaultLng }}
+              defaultZoom={12}
+              gestureHandling="greedy"
+              disableDefaultUI={false}
+              streetViewControl={false}
+              rotateControl={false}
+              style={{ width: '100%', height: '100%' }}
+              onClick={(e) => {
+                if (!e.detail.latLng) return;
+                const { lat, lng } = e.detail.latLng;
+                onChange(`${lat.toFixed(6)},${lng.toFixed(6)}`);
+                setExpanded(true);
+              }}
+            >
+              <MapController coordinate={coordinate} gridPoints={gridPreviewPoints} onExpand={() => setExpanded(true)} />
+              <ResizeOnExpand expanded={expanded} />
+              {markerPosition && <AdvancedMarker position={markerPosition} />}
+              {gridPreviewPoints.map((p) => (
+                <AdvancedMarker key={`${p.row}-${p.col}`} position={{ lat: p.lat, lng: p.lng }}>
+                  <div
+                    style={{
+                      width: p.isCenter ? 18 : 12,
+                      height: p.isCenter ? 18 : 12,
+                      borderRadius: '50%',
+                      background: p.isCenter ? '#3b82f6' : '#94a3b8',
+                      border: `1.5px solid ${p.isCenter ? '#1d4ed8' : '#475569'}`,
+                      opacity: p.isCenter ? 0.9 : 0.7,
+                    }}
+                  />
+                </AdvancedMarker>
+              ))}
+            </Map>
+          </APIProvider>
+        </div>
+      ) : (
+        <div
+          className="w-full rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center transition-all duration-300"
+          style={{ height: mapHeight }}
+        >
+          <p className="text-sm text-slate-400">Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.</p>
+        </div>
+      )}
       {showGrid && coordinate && gridSize && spacingKm && (
         <p className="text-[11px] text-slate-400 -mt-1">
           {gridSize}×{gridSize} grid · {(spacingKm / 1.609344).toFixed(2)} mi spacing · {gridSize ** 2} points

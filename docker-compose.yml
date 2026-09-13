@@ -2,9 +2,10 @@ services:
   app:
     build:
       context: .
-      # Read from .env (gitignored) — see CARTO_API_KEY there.
+      # Read from .env (gitignored) — see CARTO_API_KEY / NEXT_PUBLIC_GOOGLE_MAPS_API_KEY there.
       args:
         NEXT_PUBLIC_CARTO_API_KEY: ${CARTO_API_KEY}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     ports:
       # Bound to localhost only — not exposed to the LAN/internet
       - "127.0.0.1:3000:3000"
