@@ -17,7 +17,7 @@ interface Props {
 const POLL_INTERVAL: Record<GridQueueMode, number> = {
   live:     5_000,
   priority: 10_000,
-  standard: 30_000,
+  standard: 10_000,
 };
 
 const MODE_LABEL: Record<GridQueueMode, string> = {
