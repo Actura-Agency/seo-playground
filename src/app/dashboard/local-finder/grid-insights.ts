@@ -8,9 +8,15 @@ export interface GridSummary {
   top10Count: number;
   /** Weighted visibility score (0-100): 21 minus rank (capped at 21, "not found" scores 0), averaged across the grid. */
   ato: number;
+  /** % of grid points where the target has a numeric rank 1-20. Found/not-found only — says nothing about position. */
+  coverage: number;
+  /** Average Rank Position: mean target rank across found points only. Null (never 0) if the target was never found. */
+  arp: number | null;
+  /** Share of Local Voice: % of ALL grid points (found + not-found) where the target ranks in the top 3. */
+  solv: number;
 }
 
-/** Same stats shown in the results view (ATO score, avg rank, top 3/10 counts) — shared so history previews stay consistent. */
+/** Same stats shown in the results view (ATO score, avg rank, top 3/10 counts, Coverage/ARP/SoLV) — shared so history previews stay consistent. */
 export function computeGridSummary(results: GridPoint[]): GridSummary {
   const totalPoints = results.length;
   const ranked = results.filter((p) => p.rank !== null);
@@ -22,13 +28,31 @@ export function computeGridSummary(results: GridPoint[]): GridSummary {
   const ato = totalPoints > 0
     ? Math.round((results.reduce((s, p) => s + (21 - Math.min(p.rank ?? 21, 21)), 0) / (totalPoints * 20)) * 100)
     : 0;
-  return { totalPoints, foundCount: ranked.length, avgRank, top3Count, top10Count, ato };
+
+  // Coverage/ARP count a "found" point as rank 1-20 (DataForSEO's local-pack depth is always 20,
+  // so every non-null rank already satisfies this — the bound is kept explicit for correctness).
+  const foundInRange = results.filter((p) => p.rank !== null && p.rank! >= 1 && p.rank! <= 20);
+  const coverage = totalPoints > 0 ? (foundInRange.length / totalPoints) * 100 : 0;
+  const arp = foundInRange.length > 0
+    ? Math.round((foundInRange.reduce((s, p) => s + p.rank!, 0) / foundInRange.length) * 100) / 100
+    : null;
+  // SoLV's denominator is every grid point (found + not-found), unlike ARP's found-only denominator.
+  const solv = totalPoints > 0 ? (top3Count / totalPoints) * 100 : 0;
+
+  // foundCount matches Coverage's numerator (bounded 1-20) so the "Found on X of Y" caption
+  // under the Coverage card always agrees with the Coverage percentage shown above it.
+  return { totalPoints, foundCount: foundInRange.length, avgRank, top3Count, top10Count, ato, coverage, arp, solv };
 }
 
-/** Groups a competitor listing by domain (preferred) or name, so the same business is counted once. */
+/**
+ * Groups a competitor listing by the most reliable identity available: place_id (not currently
+ * returned by the Local Finder API, kept for forward compatibility), then cid (Google's local
+ * business id), then normalized name as a last resort.
+ */
 export function competitorKey(item: GridLocalItem): string {
-  const domain = item.domain?.trim().toLowerCase().replace(/^www\./, '');
-  return domain || item.title.trim().toLowerCase();
+  if (item.place_id) return `place:${item.place_id}`;
+  if (item.cid) return `cid:${item.cid}`;
+  return `name:${item.title.trim().toLowerCase()}`;
 }
 
 export interface CompetitorSummary {
@@ -44,6 +68,10 @@ export interface CompetitorSummary {
   avgRating: number | null;
   /** Same weighted-visibility formula as the target's ATO score, so the two are directly comparable. */
   visibilityScore: number;
+  /** Same Coverage/ARP/SoLV definitions as the target's primary metrics, so competitors are directly comparable. */
+  coverage: number;
+  arp: number | null;
+  solv: number;
 }
 
 /** Ranks every non-target business seen across the grid by how often and how highly it shows up. */
@@ -54,10 +82,15 @@ export function computeCompetitors(results: GridPoint[]): CompetitorSummary[] {
   }>();
 
   for (const point of results) {
+    // A single grid point can contain duplicate result objects for the same business (a known
+    // DataForSEO Local Finder data-quality quirk) — dedupe per point so one business can only
+    // ever contribute one appearance per grid point, keeping appearances <= totalPoints.
+    const seenAtThisPoint = new Set<string>();
     for (const item of point.items ?? []) {
       if (item.is_target) continue;
       const key = competitorKey(item);
-      if (!key) continue;
+      if (!key || seenAtThisPoint.has(key)) continue;
+      seenAtThisPoint.add(key);
       let entry = byKey.get(key);
       if (!entry) {
         entry = { name: item.title, domain: item.domain, cid: item.cid, ranks: [], ratings: [] };
@@ -70,23 +103,33 @@ export function computeCompetitors(results: GridPoint[]): CompetitorSummary[] {
   }
 
   return Array.from(byKey.entries())
-    .map(([key, e]) => ({
-      key,
-      name: e.name,
-      domain: e.domain,
-      cid: e.cid,
-      appearances: e.ranks.length,
-      totalPoints,
-      avgRank: Math.round((e.ranks.reduce((s, r) => s + r, 0) / e.ranks.length) * 10) / 10,
-      bestRank: Math.min(...e.ranks),
-      top3Count: e.ranks.filter((r) => r <= 3).length,
-      avgRating: e.ratings.length
-        ? Math.round((e.ratings.reduce((s, r) => s + r, 0) / e.ratings.length) * 10) / 10
-        : null,
-      visibilityScore: totalPoints > 0
-        ? Math.round((e.ranks.reduce((s, r) => s + (21 - Math.min(r, 21)), 0) / (totalPoints * 20)) * 100)
-        : 0,
-    }))
+    .map(([key, e]) => {
+      // Same 1-20 bound as the target's Coverage/ARP/SoLV, applied here for direct comparability.
+      const inRange = e.ranks.filter((r) => r >= 1 && r <= 20);
+      const top3Count = e.ranks.filter((r) => r <= 3).length;
+      return {
+        key,
+        name: e.name,
+        domain: e.domain,
+        cid: e.cid,
+        appearances: e.ranks.length,
+        totalPoints,
+        avgRank: Math.round((e.ranks.reduce((s, r) => s + r, 0) / e.ranks.length) * 10) / 10,
+        bestRank: Math.min(...e.ranks),
+        top3Count,
+        avgRating: e.ratings.length
+          ? Math.round((e.ratings.reduce((s, r) => s + r, 0) / e.ratings.length) * 10) / 10
+          : null,
+        visibilityScore: totalPoints > 0
+          ? Math.round((e.ranks.reduce((s, r) => s + (21 - Math.min(r, 21)), 0) / (totalPoints * 20)) * 100)
+          : 0,
+        coverage: totalPoints > 0 ? (inRange.length / totalPoints) * 100 : 0,
+        arp: inRange.length > 0
+          ? Math.round((inRange.reduce((s, r) => s + r, 0) / inRange.length) * 100) / 100
+          : null,
+        solv: totalPoints > 0 ? (top3Count / totalPoints) * 100 : 0,
+      };
+    })
     .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank);
 }
 

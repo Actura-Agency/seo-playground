@@ -28,10 +28,30 @@ function rankColor(rank: number | null): string {
   return '#BA1604';
 }
 
+/** Compact Coverage/ARP/SoLV badges shown on both the target's row and each competitor's row, so the columns line up. */
+function MetricBadges({ coverage, arp, solv }: { coverage: number; arp: number | null; solv: number }) {
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 w-14">
+        <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">COV</span>
+        <span className="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums">{Math.round(coverage)}%</span>
+      </div>
+      <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 w-14">
+        <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">ARP</span>
+        <span className="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums">{arp !== null ? arp.toFixed(2) : '—'}</span>
+      </div>
+      <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 w-14">
+        <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Top 3%</span>
+        <span className="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums">{solv.toFixed(2)}%</span>
+      </div>
+    </div>
+  );
+}
+
 export default function GridResults({ results, gridSize, spacingKm, keyword, target, cost }: Props) {
   const [highlight, setHighlight] = useState<CompetitorSummary | null>(null);
 
-  const { foundCount, top3Count: top3, top10Count: top10, avgRank, ato } = computeGridSummary(results);
+  const { foundCount, top3Count: top3, coverage, arp, solv } = computeGridSummary(results);
 
   const competitors = useMemo(() => computeCompetitors(results), [results]);
   const topCompetitors = competitors.slice(0, 5);
@@ -53,26 +73,21 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
   return (
     <div className="space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ATO Score</p>
-          <p className="text-2xl font-black text-slate-900 mt-0.5 tabular-nums">{ato}%</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Local visibility</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Coverage</p>
+          <p className="text-2xl font-black text-slate-900 mt-0.5 tabular-nums">{Math.round(coverage)}%</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Found on {foundCount} of {results.length} points</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Avg rank</p>
-          <p className="text-2xl font-black text-slate-900 mt-0.5 tabular-nums">{avgRank ?? '—'}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">{foundCount}/{results.length} points found</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ARP</p>
+          <p className="text-2xl font-black text-slate-900 mt-0.5 tabular-nums">{arp !== null ? arp.toFixed(2) : '—'}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Average rank where found</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Top 3</p>
-          <p className="text-2xl font-black text-emerald-600 mt-0.5 tabular-nums">{top3}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">of {results.length} points</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Top 10</p>
-          <p className="text-2xl font-black text-blue-600 mt-0.5 tabular-nums">{top10}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">of {results.length} points</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Top 3%</p>
+          <p className="text-2xl font-black text-emerald-600 mt-0.5 tabular-nums">{solv.toFixed(2)}%</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Top 3 on {top3} of {results.length} points</p>
         </div>
       </div>
 
@@ -92,10 +107,11 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
             <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950 border border-emerald-100 dark:border-emerald-900">
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 w-14 shrink-0">You</span>
               <span className="text-sm font-bold text-slate-800 dark:text-slate-100 flex-1 min-w-0 truncate">{target}</span>
+              <MetricBadges coverage={coverage} arp={arp} solv={solv} />
               <div className="flex-1 max-w-[120px] h-2 bg-emerald-100 dark:bg-emerald-900 rounded-full overflow-hidden hidden sm:block">
-                <div className="h-full bg-emerald-500" style={{ width: `${ato}%` }} />
+                <div className="h-full bg-emerald-500" style={{ width: `${solv}%` }} />
               </div>
-              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 tabular-nums w-10 text-right">{ato}%</span>
+              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 tabular-nums w-10 text-right">{Math.round(solv)}%</span>
             </div>
 
             {topCompetitors.map((c, i) => {
@@ -117,10 +133,11 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
                       {c.avgRating != null ? ` · ★${c.avgRating.toFixed(1)}` : ''}
                     </p>
                   </div>
+                  <MetricBadges coverage={c.coverage} arp={c.arp} solv={c.solv} />
                   <div className="flex-1 max-w-[120px] h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden hidden sm:block">
-                    <div className="h-full bg-blue-500" style={{ width: `${c.visibilityScore}%` }} />
+                    <div className="h-full bg-blue-500" style={{ width: `${c.solv}%` }} />
                   </div>
-                  <span className="text-xs font-black text-slate-600 dark:text-slate-300 tabular-nums w-10 text-right">{c.visibilityScore}%</span>
+                  <span className="text-xs font-black text-slate-600 dark:text-slate-300 tabular-nums w-10 text-right">{Math.round(c.solv)}%</span>
                   <button
                     type="button"
                     onClick={() => setHighlight(isActive ? null : c)}
@@ -130,7 +147,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
                         : 'bg-white dark:bg-slate-900 text-blue-600 border border-blue-200 dark:border-blue-900 hover:bg-blue-50 dark:hover:bg-blue-950'
                     }`}
                   >
-                    {isActive ? 'Showing ✓' : 'View on grid'}
+                    {isActive ? 'Showing ✓' : 'View'}
                   </button>
                 </div>
               );

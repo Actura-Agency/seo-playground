@@ -12,6 +12,7 @@ export interface LocalPackItem {
   booking_url?: string;
   is_paid?: boolean;
   rating?: { value?: number; votes_count?: number; rating_max?: number };
+  place_id?: string;
   cid?: string;
 }
 
@@ -121,6 +122,7 @@ export async function fetchGridSearch(
         title: item.title ?? '—',
         domain: item.domain,
         url: item.url,
+        place_id: item.place_id,
         cid: item.cid,
         rating_value: item.rating?.value,
         rating_votes: item.rating?.votes_count,

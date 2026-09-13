@@ -1299,6 +1299,7 @@ export interface GridLocalItem {
   title: string;
   domain?: string;
   url?: string;
+  place_id?: string;
   cid?: string;
   rating_value?: number;
   rating_votes?: number;
