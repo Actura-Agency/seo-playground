@@ -46,7 +46,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
   const params = await searchParams;
   const gridHistoryId = params.grid_history_id;
 
-  const defaultLanguage = getSetting('default_language') ?? 'English';
+  const defaultLanguage = getSetting('default_language') || 'English';
   const defaultCoordinates = getSetting('default_coordinates') ?? '';
 
   let gridResults: GridPoint[] | null = null;
@@ -73,9 +73,9 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     if (!creds) {
       gridError = 'DataForSEO credentials missing. Configure them in Settings.';
     } else {
-      const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '5', 10), 3), 11);
+      const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '11', 10), 3), 11);
       const spacingKm = parseFloat(params.spacing_km ?? '1');
-      const queueMode = (params.queue_mode ?? 'live') as GridQueueMode;
+      const queueMode = (params.queue_mode ?? 'standard') as GridQueueMode;
 
       const id = stableGridId(
         params.keyword, params.location_coordinate, gridSize, spacingKm, params.grid_target, queueMode,
@@ -144,10 +144,10 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     timeFilter: '',
     gridMode: true,
     forceGridMode: true,
-    gridSize: (params.grid_size ?? gridEntry?.grid_size ?? '5').toString(),
+    gridSize: (params.grid_size ?? gridEntry?.grid_size ?? '11').toString(),
     spacingKm: (params.spacing_km ?? gridEntry?.spacing_km ?? '1').toString(),
     gridTarget: (params.grid_target ?? gridEntry?.target ?? '').toString(),
-    queueMode: (params.queue_mode ?? gridEntry?.queue_mode ?? 'live').toString(),
+    queueMode: (params.queue_mode ?? gridEntry?.queue_mode ?? 'standard').toString(),
   };
 
   const historyItems = gridHistory.map((entry) => {

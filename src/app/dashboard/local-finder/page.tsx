@@ -76,7 +76,7 @@ export default async function LocalFinderPage({ searchParams }: { searchParams: 
   const historyId = params.history_id;
 
   const defaultLocation = getSetting('default_location') ?? 'France';
-  const defaultLanguage = getSetting('default_language') ?? 'English';
+  const defaultLanguage = getSetting('default_language') || 'English';
   const defaultCoordinates = getSetting('default_coordinates') ?? '';
 
   let items: LocalPackItem[] = [];

@@ -51,7 +51,7 @@ function formatLiveDuration(totalPoints: number) {
 
 // 1 mile = 1.609344 km (exact, international mile).
 const KM_PER_MILE = 1.609344;
-const MILE_SPACING_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+const MILE_SPACING_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
 /** Snaps an arbitrary miles value (e.g. converted from an old saved km spacing) to the nearest preset option. */
 function nearestMilePreset(miles: number): number {
@@ -94,14 +94,14 @@ export default function LocalFinderForm({ defaults }: Props) {
   const [device, setDevice] = useState(defaults.device || 'desktop');
   const [coordinate, setCoordinate] = useState(defaults.locationCoordinate || defaults.defaultCenter);
   const [isLoading, setIsLoading] = useState(false);
-  const [gridSize, setGridSize] = useState(parseInt(defaults.gridSize ?? '5', 10));
+  const [gridSize, setGridSize] = useState(parseInt(defaults.gridSize ?? '11', 10));
   // The grid-generation math (generateGridCoords) still works in kilometers — spacingKm is
   // derived from the user-facing miles value right before it's used, per KM_PER_MILE above.
   const [spacingMiles, setSpacingMiles] = useState(
     nearestMilePreset(parseFloat(defaults.spacingKm ?? String(KM_PER_MILE)) / KM_PER_MILE),
   );
   const spacingKm = spacingMiles * KM_PER_MILE;
-  const [queueMode, setQueueMode] = useState<QueueMode>((defaults.queueMode as QueueMode) || 'live');
+  const [queueMode, setQueueMode] = useState<QueueMode>((defaults.queueMode as QueueMode) || 'standard');
 
   const osOptions =
     device === 'mobile'
@@ -127,19 +127,39 @@ export default function LocalFinderForm({ defaults }: Props) {
         />
       </div>
 
-      {/* Language */}
-      <div>
-        <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">
-          Language <span className="text-red-400">*</span>
-        </label>
-        <select
-          name="language"
-          defaultValue={defaults.language || 'English'}
-          className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800"
-        >
-          {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-        </select>
-      </div>
+      {!isGrid && (
+        /* Language */
+        <div>
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">
+            Language <span className="text-red-400">*</span>
+          </label>
+          <select
+            name="language"
+            defaultValue={defaults.language || 'English'}
+            className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800"
+          >
+            {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+          </select>
+        </div>
+      )}
+
+      {isGrid && (
+        /* Target business */
+        <div>
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">
+            Target business <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            name="grid_target"
+            defaultValue={defaults.gridTarget}
+            placeholder="e.g. Best Plumbing or bestplumbing.com"
+            required
+            className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-slate-800"
+          />
+          <p className="text-[11px] text-slate-400 mt-1">Name or domain — partial match, case-insensitive.</p>
+        </div>
+      )}
 
       {/* Map */}
       <div>
@@ -186,20 +206,18 @@ export default function LocalFinderForm({ defaults }: Props) {
       {isGrid ? (
         /* Grid-specific fields */
         <>
-          {/* Target business */}
+          {/* Language */}
           <div>
             <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">
-              Target business <span className="text-red-400">*</span>
+              Language <span className="text-red-400">*</span>
             </label>
-            <input
-              type="text"
-              name="grid_target"
-              defaultValue={defaults.gridTarget}
-              placeholder="e.g. Best Plumbing or bestplumbing.com"
-              required
-              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-slate-800"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">Name or domain — partial match, case-insensitive.</p>
+            <select
+              name="language"
+              defaultValue={defaults.language || 'English'}
+              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800"
+            >
+              {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+            </select>
           </div>
 
           {/* Grid size + spacing */}
