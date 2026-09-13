@@ -113,12 +113,10 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="flex h-14 items-center px-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-md bg-blue-600 flex items-center justify-center shrink-0">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 10 L5 4 L8 8 L10 5 L13 10" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">SEO Playground</span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size local logo asset, next/image is unnecessary here */}
+          <img src="/actura-icon.svg" alt="" className="w-6 h-6 rounded-md shrink-0" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size local logo asset, next/image is unnecessary here */}
+          <img src="/actura-wordmark.png" alt="Actura" className="h-4 w-auto" />
         </Link>
       </div>
 
