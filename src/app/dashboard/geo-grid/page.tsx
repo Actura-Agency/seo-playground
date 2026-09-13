@@ -229,6 +229,8 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
                 keyword={gridEntry.keyword}
                 target={gridEntry.target}
                 cost={gridEntry.cost}
+                center={gridEntry.center}
+                language={gridEntry.language}
               />
             )}
           </div>

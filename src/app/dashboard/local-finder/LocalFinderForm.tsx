@@ -60,34 +60,6 @@ function nearestMilePreset(miles: number): number {
   );
 }
 
-function GridPreview({ size, spacingMiles }: { size: number; spacingMiles: number }) {
-  const half = Math.floor(size / 2);
-  return (
-    <div className="flex flex-col items-center gap-2 py-2">
-      <div
-        className="inline-grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${size}, 1fr)` }}
-      >
-        {Array.from({ length: size * size }).map((_, i) => {
-          const row = Math.floor(i / size);
-          const col = i % size;
-          const isCenter = row === half && col === half;
-          return (
-            <div
-              key={i}
-              className={`rounded-sm ${isCenter ? 'bg-blue-500 ring-2 ring-blue-300' : 'bg-slate-200 dark:bg-slate-700'}`}
-              style={{ width: Math.max(12, 48 / size), height: Math.max(12, 48 / size) }}
-            />
-          );
-        })}
-      </div>
-      <p className="text-[10px] text-slate-400 font-medium">
-        {size}×{size} points · {spacingMiles} mi spacing · ~{((size - 1) * spacingMiles).toFixed(1)} mi coverage
-      </p>
-    </div>
-  );
-}
-
 export default function LocalFinderForm({ defaults }: Props) {
   const isGrid = defaults.forceGridMode === true;
 
@@ -239,12 +211,6 @@ export default function LocalFinderForm({ defaults }: Props) {
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* Grid preview */}
-          <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 text-center">Grid preview</p>
-            <GridPreview size={gridSize} spacingMiles={spacingMiles} />
           </div>
 
           {/* Queue mode */}

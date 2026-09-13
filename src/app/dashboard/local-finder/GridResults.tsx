@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { GridPoint } from '@/lib/db';
 import { computeCompetitors, computeGridSummary, computeRingStats, type CompetitorSummary } from './grid-insights';
 
@@ -13,19 +13,33 @@ interface Props {
   keyword: string;
   target: string;
   cost?: number;
+  /** Grid center "lat,lng" and search language — needed only for the on-demand business-location lookup. */
+  center: string;
+  language: string;
 }
 
 function rankColor(rank: number | null): string {
   if (rank === null) return '#94a3b8';
   if (rank === 1) return '#1A6600';
-  if (rank === 2) return '#59810A';
-  if (rank === 3) return '#969C15';
-  if (rank === 4) return '#CBB21D';
-  if (rank === 5) return '#FFC826';
-  if (rank === 6) return '#EF9E1E';
-  if (rank === 7) return '#DD7015';
-  if (rank === 8) return '#CC430D';
+  if (rank <= 3) return '#59810A';
+  if (rank <= 5) return '#FFC826';
+  if (rank <= 10) return '#DD7015';
   return '#BA1604';
+}
+
+/** Small legend swatch — a star for #1 (matching the real marker shape), a plain square otherwise. */
+function LegendSwatch({ color, star }: { color: string; star?: boolean }) {
+  if (star) {
+    return (
+      <svg width={14} height={14} viewBox="0 0 24 24">
+        <path
+          d="M12,2 L15.2,7.6 L21.5,8.9 L17.2,13.7 L17.9,20.1 L12,17.5 L6.1,20.1 L6.8,13.7 L2.5,8.9 L8.8,7.6 Z"
+          fill={color} stroke={color} strokeWidth={3} strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  return <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />;
 }
 
 /** Compact Coverage/ARP/SoLV badges shown on both the target's row and each competitor's row, so the columns line up. */
@@ -48,8 +62,47 @@ function MetricBadges({ coverage, arp, solv }: { coverage: number; arp: number |
   );
 }
 
-export default function GridResults({ results, gridSize, spacingKm, keyword, target, cost }: Props) {
+export default function GridResults({ results, gridSize, spacingKm, keyword, target, cost, center, language }: Props) {
   const [highlight, setHighlight] = useState<CompetitorSummary | null>(null);
+  const [highlightLocation, setHighlightLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locatingBusiness, setLocatingBusiness] = useState(false);
+  // Session-scoped cache so re-viewing a competitor you already looked up is instant and free —
+  // only a brand-new business triggers a real (several-second) DataForSEO lookup.
+  const locationCache = useRef(new Map<string, { lat: number; lng: number }>());
+
+  // Fetches the highlighted competitor's real business address (on-demand, not part of the scan
+  // itself) so their actual location can be pinned on the map alongside the rank grid.
+  useEffect(() => {
+    if (!highlight?.cid) {
+      setHighlightLocation(null);
+      setLocatingBusiness(false);
+      return;
+    }
+    const cached = locationCache.current.get(highlight.cid);
+    if (cached) {
+      setHighlightLocation(cached);
+      setLocatingBusiness(false);
+      return;
+    }
+    let cancelled = false;
+    setHighlightLocation(null);
+    setLocatingBusiness(true);
+    const params = new URLSearchParams({ cid: highlight.cid, center, language });
+    fetch(`/api/business-location?${params}`)
+      .then((res) => res.json())
+      .then((data: { lat?: number; lng?: number }) => {
+        if (!cancelled && data.lat != null && data.lng != null) {
+          const loc = { lat: data.lat, lng: data.lng };
+          locationCache.current.set(highlight.cid!, loc);
+          setHighlightLocation(loc);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLocatingBusiness(false);
+      });
+    return () => { cancelled = true; };
+  }, [highlight?.cid, center, language]);
 
   const { foundCount, top3Count: top3, coverage, arp, solv } = computeGridSummary(results);
 
@@ -58,15 +111,11 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
   const ringStats = useMemo(() => computeRingStats(results, gridSize, spacingKm), [results, gridSize, spacingKm]);
 
   const legend = [
-    { color: '#1A6600', label: '#1' },
-    { color: '#59810A', label: '#2' },
-    { color: '#969C15', label: '#3' },
-    { color: '#CBB21D', label: '#4' },
-    { color: '#FFC826', label: '#5' },
-    { color: '#EF9E1E', label: '#6' },
-    { color: '#DD7015', label: '#7' },
-    { color: '#CC430D', label: '#8' },
-    { color: '#BA1604', label: '#9+' },
+    { color: '#1A6600', label: '#1', star: true },
+    { color: '#59810A', label: '#2-3' },
+    { color: '#FFC826', label: '#4-5' },
+    { color: '#DD7015', label: '#6-10' },
+    { color: '#BA1604', label: '#11-20' },
     { color: '#94a3b8', label: 'Not found' },
   ];
 
@@ -197,7 +246,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
         <div className="flex flex-wrap gap-2 mb-4">
           {legend.map((item) => (
             <div key={item.label} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: item.color }} />
+              <LegendSwatch color={item.color} star={item.star} />
               <span className="text-[10px] font-bold text-slate-500">{item.label}</span>
             </div>
           ))}
@@ -220,6 +269,8 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
             target={target}
             highlightKey={highlight?.key}
             highlightName={highlight?.name}
+            highlightLocation={highlightLocation}
+            locatingBusiness={locatingBusiness}
           />
         </Suspense>
       </div>

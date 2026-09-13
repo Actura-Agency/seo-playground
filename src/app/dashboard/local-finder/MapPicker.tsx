@@ -161,6 +161,7 @@ export default function MapPicker({ coordinate, onChange, showGrid, gridSize, sp
               disableDefaultUI={false}
               streetViewControl={false}
               rotateControl={false}
+              mapTypeControlOptions={{ style: 2 as google.maps.MapTypeControlStyle }}
               style={{ width: '100%', height: '100%' }}
               onClick={(e) => {
                 if (!e.detail.latLng) return;
@@ -197,11 +198,15 @@ export default function MapPicker({ coordinate, onChange, showGrid, gridSize, sp
           <p className="text-sm text-slate-400">Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.</p>
         </div>
       )}
-      {showGrid && coordinate && gridSize && spacingKm && (
-        <p className="text-[11px] text-slate-400 -mt-1">
-          {gridSize}×{gridSize} grid · {(spacingKm / 1.609344).toFixed(2)} mi spacing · {gridSize ** 2} points
-        </p>
-      )}
+      {showGrid && coordinate && gridSize && spacingKm && (() => {
+        const spacingMi = spacingKm / 1.609344;
+        const coverageSqMi = ((gridSize - 1) * spacingMi) ** 2;
+        return (
+          <p className="text-[11px] text-slate-400 -mt-1">
+            {gridSize}×{gridSize} grid · {spacingMi.toFixed(2)} mi spacing · {gridSize ** 2} points · {coverageSqMi.toFixed(1)} sq mi covered
+          </p>
+        );
+      })()}
     </>
   );
 }

@@ -4,8 +4,29 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   APIProvider, Map, AdvancedMarker, InfoWindow, useMap, useAdvancedMarkerRef,
 } from '@vis.gl/react-google-maps';
+import { Building2 } from 'lucide-react';
 import type { GridPoint } from '@/lib/db';
 import { competitorKey } from './grid-insights';
+
+/** The highlighted competitor's real business address, when known — a distinct pin from the rank grid. */
+function BusinessLocationMarker({ lat, lng }: { lat: number; lng: number }) {
+  return (
+    <AdvancedMarker position={{ lat, lng }} zIndex={999}>
+      <div
+        style={{
+          width: 30, height: 30,
+          background: '#2563eb',
+          borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '2px solid white',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+        }}
+      >
+        <Building2 size={16} color="white" />
+      </div>
+    </AdvancedMarker>
+  );
+}
 
 interface Props {
   points: GridPoint[];
@@ -14,18 +35,18 @@ interface Props {
   /** When set, markers show this competitor's rank at each point instead of the target's. */
   highlightKey?: string;
   highlightName?: string;
+  /** The highlighted competitor's real business address, when known — shown as a separate pin. */
+  highlightLocation?: { lat: number; lng: number } | null;
+  /** True while the address lookup above is in flight, so the banner can show it's working. */
+  locatingBusiness?: boolean;
 }
 
 function rankColor(rank: number | null): string {
   if (rank === null) return '#94a3b8';
   if (rank === 1) return '#1A6600';
-  if (rank === 2) return '#59810A';
-  if (rank === 3) return '#969C15';
-  if (rank === 4) return '#CBB21D';
-  if (rank === 5) return '#FFC826';
-  if (rank === 6) return '#EF9E1E';
-  if (rank === 7) return '#DD7015';
-  if (rank === 8) return '#CC430D';
+  if (rank <= 3) return '#59810A';
+  if (rank <= 5) return '#FFC826';
+  if (rank <= 10) return '#DD7015';
   return '#BA1604';
 }
 
@@ -202,7 +223,7 @@ function GridMarker({ point, isCenter, cellPx, fontSize, target, highlightKey }:
   );
 }
 
-export default function GridMap({ points, gridSize, target, highlightKey, highlightName }: Props) {
+export default function GridMap({ points, gridSize, target, highlightKey, highlightName, highlightLocation, locatingBusiness }: Props) {
   const half = Math.floor(gridSize / 2);
   const geoPoints = useMemo(() => points.filter((p) => p.lat != null && p.lng != null), [points]);
   const cellPx = gridSize <= 3 ? 52 : gridSize <= 5 ? 44 : gridSize <= 7 ? 38 : 32;
@@ -232,6 +253,7 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
       {highlightKey && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg">
           Showing: {highlightName ?? 'competitor'}
+          {locatingBusiness && ' · Locating address…'}
         </div>
       )}
       <div
@@ -247,6 +269,10 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
             disableDefaultUI={false}
             streetViewControl={false}
             rotateControl={false}
+            // style: 2 = DROPDOWN_MENU (a numeric literal, not the google.maps.* enum, since that
+            // global isn't guaranteed loaded yet when this prop is evaluated) — swaps the default
+            // two-button Map/Satellite toggle for one compact button.
+            mapTypeControlOptions={{ style: 2 as google.maps.MapTypeControlStyle }}
             style={{ width: '100%', height: '100%' }}
           >
             <FitBoundsOnLoad points={boundsPoints} />
@@ -261,6 +287,9 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
                 highlightKey={highlightKey}
               />
             ))}
+            {highlightLocation && (
+              <BusinessLocationMarker lat={highlightLocation.lat} lng={highlightLocation.lng} />
+            )}
           </Map>
         </APIProvider>
       </div>
