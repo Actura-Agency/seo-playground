@@ -126,6 +126,12 @@ function GridMarker({ point, isCenter, cellPx, fontSize, target, highlightKey }:
   const label = rank != null ? String(rank) : '—';
   const border = isCenter ? '3px dashed rgba(255,255,255,0.85)' : '2px solid rgba(255,255,255,0.4)';
 
+  // Rank #1 gets a star instead of a circle so it stands out at a glance from #2/#3. Drawn as an
+  // SVG path (not a CSS clip-path) with a matching-color rounded stroke, so the points come out
+  // bulky and rounded rather than sharp.
+  const isFirst = rank === 1;
+  const size = isFirst ? Math.round(cellPx * 1.17) : cellPx;
+
   return (
     <>
       <AdvancedMarker
@@ -133,24 +139,58 @@ function GridMarker({ point, isCenter, cellPx, fontSize, target, highlightKey }:
         position={{ lat: point.lat!, lng: point.lng! }}
         onClick={() => setOpen((o) => !o)}
       >
+        {/* Outer layer only becomes a visible halo for a #1-ranked center point, replacing the
+            dashed border a circle would otherwise use to mark "this is the grid center". */}
         <div
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
-            width: cellPx, height: cellPx,
-            background: color,
-            borderRadius: '50%',
+            position: 'relative',
+            width: isFirst && isCenter ? size + 10 : size,
+            height: isFirst && isCenter ? size + 10 : size,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize, fontWeight: 900, color: 'white',
-            fontFamily: 'system-ui, sans-serif',
-            border,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
             cursor: 'pointer',
             transition: 'transform 0.1s',
             transform: hovered ? 'scale(1.12)' : 'scale(1)',
           }}
         >
-          {label}
+          {isFirst && isCenter && (
+            <svg width={size + 10} height={size + 10} viewBox="0 0 24 24" style={{ position: 'absolute' }}>
+              <path
+                d="M12,2 L15.2,7.6 L21.5,8.9 L17.2,13.7 L17.9,20.1 L12,17.5 L6.1,20.1 L6.8,13.7 L2.5,8.9 L8.8,7.6 Z"
+                fill="rgba(255,255,255,0.9)" stroke="rgba(255,255,255,0.9)" strokeWidth={3.5} strokeLinejoin="round"
+              />
+            </svg>
+          )}
+          <div
+            style={{
+              position: 'relative',
+              width: size, height: size,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize, fontWeight: 900, color: 'white',
+              fontFamily: 'system-ui, sans-serif',
+            }}
+          >
+            {isFirst ? (
+              <svg width={size} height={size} viewBox="0 0 24 24" style={{ position: 'absolute', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.45))' }}>
+                <path
+                  d="M12,2 L15.2,7.6 L21.5,8.9 L17.2,13.7 L17.9,20.1 L12,17.5 L6.1,20.1 L6.8,13.7 L2.5,8.9 L8.8,7.6 Z"
+                  fill={color} stroke={color} strokeWidth={3.5} strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <div
+                style={{
+                  position: 'absolute', inset: 0,
+                  background: color,
+                  borderRadius: '50%',
+                  border,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                }}
+              />
+            )}
+            <span style={{ position: 'relative' }}>{label}</span>
+          </div>
         </div>
       </AdvancedMarker>
       {open && marker && (
