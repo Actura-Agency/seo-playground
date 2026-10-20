@@ -18,13 +18,14 @@ interface Props {
   language: string;
 }
 
+// One distinct shade per rank 1-8 (a green-to-red gradient) so adjacent markers read as visibly
+// different, even though the legend below groups them into coarser bands for readability.
+const RANK_GRADIENT = ['#1A6600', '#59810A', '#969C15', '#CBB21D', '#FFC826', '#EF9E1E', '#DD7015', '#CC430D'];
+
 function rankColor(rank: number | null): string {
   if (rank === null) return '#94a3b8';
-  if (rank === 1) return '#1A6600';
-  if (rank <= 3) return '#59810A';
-  if (rank <= 5) return '#FFC826';
-  if (rank <= 10) return '#DD7015';
-  return '#BA1604';
+  if (rank >= RANK_GRADIENT.length + 1) return '#BA1604';
+  return RANK_GRADIENT[rank - 1];
 }
 
 /** Small legend swatch — a star for #1 (matching the real marker shape), a plain square otherwise. */
@@ -66,43 +67,83 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
   const [highlight, setHighlight] = useState<CompetitorSummary | null>(null);
   const [highlightLocation, setHighlightLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locatingBusiness, setLocatingBusiness] = useState(false);
+  // Only set once the user explicitly clicks "View location" — the lookup costs real DataForSEO
+  // credits, so it must never fire just from selecting a competitor to view on the grid.
+  const [locationRequestedFor, setLocationRequestedFor] = useState<string | null>(null);
   // Session-scoped cache so re-viewing a competitor you already looked up is instant and free —
-  // only a brand-new business triggers a real (several-second) DataForSEO lookup.
+  // only a brand-new business triggers a real (Priority-queue, ~1 min) DataForSEO lookup.
   const locationCache = useRef(new Map<string, { lat: number; lng: number }>());
 
-  // Fetches the highlighted competitor's real business address (on-demand, not part of the scan
-  // itself) so their actual location can be pinned on the map alongside the rank grid.
+  // Switching which competitor is highlighted always clears any location pin/request — a lookup
+  // is scoped to one business and must never carry over or auto-restart for the next one.
   useEffect(() => {
-    if (!highlight?.cid) {
-      setHighlightLocation(null);
-      setLocatingBusiness(false);
-      return;
-    }
-    const cached = locationCache.current.get(highlight.cid);
+    setHighlightLocation(null);
+    setLocatingBusiness(false);
+    setLocationRequestedFor(null);
+  }, [highlight?.key]);
+
+  // Starts a Priority-queue business-location lookup for the requested competitor and polls for
+  // it, showing a small spinner (via locatingBusiness) while waiting. Only runs when the user has
+  // clicked "View location" (locationRequestedFor set) — never automatically.
+  useEffect(() => {
+    if (!locationRequestedFor) return;
+    const cid = locationRequestedFor;
+    const cached = locationCache.current.get(cid);
     if (cached) {
       setHighlightLocation(cached);
-      setLocatingBusiness(false);
       return;
     }
     let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
     setHighlightLocation(null);
     setLocatingBusiness(true);
-    const params = new URLSearchParams({ cid: highlight.cid, center, language });
-    fetch(`/api/business-location?${params}`)
-      .then((res) => res.json())
-      .then((data: { lat?: number; lng?: number }) => {
-        if (!cancelled && data.lat != null && data.lng != null) {
+
+    const poll = async (taskId: string) => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/business-location/${taskId}`);
+        const data = await res.json() as { status: string; lat?: number; lng?: number };
+        if (cancelled) return;
+        if (data.status === 'done' && data.lat != null && data.lng != null) {
           const loc = { lat: data.lat, lng: data.lng };
-          locationCache.current.set(highlight.cid!, loc);
+          locationCache.current.set(cid, loc);
           setHighlightLocation(loc);
+          setLocatingBusiness(false);
+          return;
+        }
+        if (data.status === 'pending') {
+          pollTimer = setTimeout(() => poll(taskId), 30_000);
+        } else {
+          setLocatingBusiness(false); // 'error' → give up; no pin ever appears for this business.
+        }
+      } catch {
+        pollTimer = setTimeout(() => poll(taskId), 30_000);
+      }
+    };
+
+    fetch('/api/business-location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cid, center, language }),
+    })
+      .then((res) => res.json())
+      .then((data: { taskId?: string }) => {
+        if (cancelled) return;
+        if (data.taskId) {
+          pollTimer = setTimeout(() => poll(data.taskId!), 30_000);
+        } else {
+          setLocatingBusiness(false);
         }
       })
-      .catch(() => {})
-      .finally(() => {
+      .catch(() => {
         if (!cancelled) setLocatingBusiness(false);
       });
-    return () => { cancelled = true; };
-  }, [highlight?.cid, center, language]);
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [locationRequestedFor, center, language]);
 
   const { foundCount, top3Count: top3, coverage, arp, solv } = computeGridSummary(results);
 
@@ -225,6 +266,16 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
           <div className="flex items-center gap-3">
             {cost !== undefined && (
               <span className="text-[10px] font-mono text-slate-400">cost: ${cost.toFixed(4)}</span>
+            )}
+            {highlight?.cid && !highlightLocation && (
+              <button
+                type="button"
+                onClick={() => setLocationRequestedFor(highlight.cid!)}
+                disabled={locatingBusiness}
+                className="text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-60 disabled:cursor-wait"
+              >
+                {locatingBusiness ? 'Locating…' : 'View location'}
+              </button>
             )}
             {highlight ? (
               <button

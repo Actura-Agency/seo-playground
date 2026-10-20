@@ -73,7 +73,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     if (!creds) {
       gridError = 'DataForSEO credentials missing. Configure them in Settings.';
     } else {
-      const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '11', 10), 3), 11);
+      const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '11', 10), 3), 13);
       const spacingKm = parseFloat(params.spacing_km ?? '1');
       const queueMode = (params.queue_mode ?? 'standard') as GridQueueMode;
 

@@ -196,6 +196,7 @@ export default function LocalFinderForm({ defaults }: Props) {
                 <option value="7">7×7 (49 points)</option>
                 <option value="9">9×9 (81 points)</option>
                 <option value="11">11×11 (121 points)</option>
+                <option value="13">13×13 (169 points)</option>
               </select>
             </div>
             <div>

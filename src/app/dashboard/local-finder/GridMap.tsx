@@ -37,17 +37,18 @@ interface Props {
   highlightName?: string;
   /** The highlighted competitor's real business address, when known — shown as a separate pin. */
   highlightLocation?: { lat: number; lng: number } | null;
-  /** True while the address lookup above is in flight, so the banner can show it's working. */
+  /** True while the address lookup above is in flight — shown as a small spinner, not text, so the banner never wraps. */
   locatingBusiness?: boolean;
 }
 
+// One distinct shade per rank 1-8 (a green-to-red gradient) so adjacent markers on the map read
+// as visibly different, even though the legend groups them into coarser bands for readability.
+const RANK_GRADIENT = ['#1A6600', '#59810A', '#969C15', '#CBB21D', '#FFC826', '#EF9E1E', '#DD7015', '#CC430D'];
+
 function rankColor(rank: number | null): string {
   if (rank === null) return '#94a3b8';
-  if (rank === 1) return '#1A6600';
-  if (rank <= 3) return '#59810A';
-  if (rank <= 5) return '#FFC826';
-  if (rank <= 10) return '#DD7015';
-  return '#BA1604';
+  if (rank >= RANK_GRADIENT.length + 1) return '#BA1604';
+  return RANK_GRADIENT[rank - 1];
 }
 
 function rankTextColor(rank: number): string {
@@ -179,7 +180,7 @@ function GridMarker({ point, isCenter, cellPx, fontSize, target, highlightKey }:
             <svg width={size + 10} height={size + 10} viewBox="0 0 24 24" style={{ position: 'absolute' }}>
               <path
                 d="M12,2 L15.2,7.6 L21.5,8.9 L17.2,13.7 L17.9,20.1 L12,17.5 L6.1,20.1 L6.8,13.7 L2.5,8.9 L8.8,7.6 Z"
-                fill="rgba(255,255,255,0.9)" stroke="rgba(255,255,255,0.9)" strokeWidth={3.5} strokeLinejoin="round"
+                fill="#FFC826" stroke="#FFC826" strokeWidth={3.5} strokeLinejoin="round"
               />
             </svg>
           )}
@@ -251,9 +252,14 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
   return (
     <div className="relative">
       {highlightKey && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg">
-          Showing: {highlightName ?? 'competitor'}
-          {locatingBusiness && ' · Locating address…'}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 max-w-[85%] flex items-center gap-1.5 whitespace-nowrap bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg">
+          <span className="truncate min-w-0">Showing: {highlightName ?? 'competitor'}</span>
+          {locatingBusiness && (
+            <svg className="animate-spin w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          )}
         </div>
       )}
       <div
