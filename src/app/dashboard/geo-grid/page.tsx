@@ -7,7 +7,7 @@ import LocalFinderForm from '../local-finder/LocalFinderForm';
 import GridResults from '../local-finder/GridResults';
 import GridPending from '../local-finder/GridPending';
 import HistorySidebar from '@/components/HistorySidebar';
-import { fetchGridSearch, postGridTasksQueue, stableGridId } from '../local-finder/grid-api';
+import { fetchGridSearch, postGridTasksQueue, stableGridId, type GridDepth } from '../local-finder/grid-api';
 
 interface SearchParams {
   keyword?: string;
@@ -18,6 +18,7 @@ interface SearchParams {
   grid_target?: string;
   grid_history_id?: string;
   queue_mode?: string;
+  depth?: string;
 }
 
 function formatDate(ts: number) {
@@ -27,7 +28,7 @@ function formatDate(ts: number) {
   });
 }
 
-function gridRerunUrl(entry: { keyword: string; center: string; grid_size: number; spacing_km: number; target: string; language: string; queue_mode: string }, basePath = '/dashboard/geo-grid') {
+function gridRerunUrl(entry: { keyword: string; center: string; grid_size: number; spacing_km: number; target: string; language: string; queue_mode: string; depth: number }, basePath = '/dashboard/geo-grid') {
   const p = new URLSearchParams({
     keyword: entry.keyword,
     location_coordinate: entry.center,
@@ -36,6 +37,7 @@ function gridRerunUrl(entry: { keyword: string; center: string; grid_size: numbe
     grid_target: entry.target,
     language: entry.language,
     queue_mode: entry.queue_mode,
+    depth: String(entry.depth),
     mode: 'grid',
   });
   return `${basePath}?${p.toString()}`;
@@ -76,9 +78,11 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
       const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '11', 10), 3), 13);
       const spacingKm = parseFloat(params.spacing_km ?? '1');
       const queueMode = (params.queue_mode ?? 'standard') as GridQueueMode;
+      // Live is a flat price per point at either depth, so it always fetches the full 20.
+      const depth: GridDepth = queueMode !== 'live' && params.depth === '10' ? 10 : 20;
 
       const id = stableGridId(
-        params.keyword, params.location_coordinate, gridSize, spacingKm, params.grid_target, queueMode,
+        params.keyword, params.location_coordinate, gridSize, spacingKm, params.grid_target, queueMode, depth,
       );
 
       if (!getGridEntry(id)) {
@@ -92,13 +96,14 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
           language: params.language ?? defaultLanguage,
           status: 'done',
           queue_mode: queueMode,
+          depth,
         };
 
         if (queueMode === 'live') {
           const result = await fetchGridSearch(
             params.keyword, params.location_coordinate,
             gridSize, spacingKm, params.language ?? defaultLanguage,
-            params.grid_target, creds.login, creds.pass,
+            params.grid_target, creds.login, creds.pass, depth,
           );
           if (result.error) {
             gridError = result.error;
@@ -109,7 +114,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
           const result = await postGridTasksQueue(
             params.keyword, params.location_coordinate,
             gridSize, spacingKm, params.language ?? defaultLanguage,
-            creds.login, creds.pass, queueMode,
+            creds.login, creds.pass, queueMode, depth,
           );
           if (result.error) {
             gridError = result.error;
@@ -139,7 +144,8 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     language: (params.language ?? gridEntry?.language ?? defaultLanguage).toString(),
     device: 'desktop',
     os: 'windows',
-    depth: '20',
+    // Top 10 by default (half the cost); viewing a past scan shows the depth it actually used.
+    depth: (params.depth ?? gridEntry?.depth ?? '10').toString(),
     minRating: '',
     timeFilter: '',
     gridMode: true,

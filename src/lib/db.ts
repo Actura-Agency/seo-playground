@@ -523,6 +523,8 @@ function initSchema(db: Database.Database) {
   addColumnIfMissing(db, 'grid_searches', `ADD COLUMN status TEXT NOT NULL DEFAULT 'done'`);
   addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN task_ids TEXT');
   addColumnIfMissing(db, 'grid_searches', `ADD COLUMN queue_mode TEXT NOT NULL DEFAULT 'live'`);
+  // Results per grid point (10 or 20). Every scan before this column existed used 20.
+  addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN depth INTEGER NOT NULL DEFAULT 20');
   addColumnIfMissing(db, 'reviews_tasks', 'ADD COLUMN meta TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN keyword TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN technology TEXT');
@@ -1283,6 +1285,7 @@ export interface GridSearchEntry {
   cost?: number;
   status: GridStatus;
   queue_mode: GridQueueMode;
+  depth: number;
   summary?: GridHistorySummary;
 }
 
@@ -1337,41 +1340,43 @@ function summarizeGridResults(resultsJson: string | null): GridHistorySummary | 
 
 export function getGridHistory(): GridSearchEntry[] {
   const rows = getDb()
-    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, results FROM grid_searches ORDER BY ts DESC LIMIT 20')
-    .all() as Array<{ id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; results: string | null }>;
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, results FROM grid_searches ORDER BY ts DESC LIMIT 20')
+    .all() as Array<{ id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; depth: number | null; results: string | null }>;
   return rows.map((r) => ({
     id: r.id, ts: r.ts, keyword: r.keyword, target: r.target, center: r.center,
     grid_size: r.grid_size, spacing_km: r.spacing_km, language: r.language, cost: r.cost ?? undefined,
     status: (r.status ?? 'done') as GridStatus,
     queue_mode: (r.queue_mode ?? 'live') as GridQueueMode,
+    depth: r.depth ?? 20,
     summary: r.status === 'pending' ? undefined : summarizeGridResults(r.results),
   }));
 }
 
 export function getGridEntry(id: string): (GridSearchEntry & { task_ids?: GridTaskPoint[] }) | null {
   const row = getDb()
-    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, task_ids FROM grid_searches WHERE id = ?')
-    .get(id) as { id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; task_ids: string | null } | undefined;
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, task_ids FROM grid_searches WHERE id = ?')
+    .get(id) as { id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; depth: number | null; task_ids: string | null } | undefined;
   if (!row) return null;
   return {
     id: row.id, ts: row.ts, keyword: row.keyword, target: row.target, center: row.center,
     grid_size: row.grid_size, spacing_km: row.spacing_km, language: row.language, cost: row.cost ?? undefined,
     status: (row.status ?? 'done') as GridStatus,
     queue_mode: (row.queue_mode ?? 'live') as GridQueueMode,
+    depth: row.depth ?? 20,
     task_ids: row.task_ids ? JSON.parse(row.task_ids) as GridTaskPoint[] : undefined,
   };
 }
 
 export function saveGridSearch(entry: GridSearchEntry, results: GridPoint[]): void {
   getDb()
-    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, JSON.stringify(results), entry.status, entry.queue_mode);
+    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, JSON.stringify(results), entry.status, entry.queue_mode, entry.depth);
 }
 
 export function saveGridSearchPending(entry: GridSearchEntry, taskPoints: GridTaskPoint[]): void {
   getDb()
-    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, task_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, '[]', 'pending', entry.queue_mode, JSON.stringify(taskPoints));
+    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, depth, task_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, '[]', 'pending', entry.queue_mode, entry.depth, JSON.stringify(taskPoints));
 }
 
 export function getGridProgress(id: string): { results: GridPoint[]; pendingTasks: GridTaskPoint[] } | null {

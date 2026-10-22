@@ -26,13 +26,17 @@ interface Props {
   };
 }
 
-// DataForSEO Local Finder SERP API pricing (checked against their pricing page — they revise this periodically).
+// DataForSEO Local Finder price per grid point, by results requested (depth 10 or 20). Measured
+// against the live API on 2026-10-21 — they revise this periodically, and each finished scan
+// shows its real billed cost, so re-check these if the two ever drift apart.
 type QueueMode = 'live' | 'priority' | 'standard';
+type Depth = 10 | 20;
 
-const QUEUE_MODES: { value: QueueMode; label: string; costPerPoint: number; wait: string }[] = [
-  { value: 'live', label: 'Live', costPerPoint: 0.002, wait: 'Blocks the page' },
-  { value: 'priority', label: 'Priority', costPerPoint: 0.0012, wait: '~1 min avg, background' },
-  { value: 'standard', label: 'Standard', costPerPoint: 0.0006, wait: '5–45 min, background' },
+const QUEUE_MODES: { value: QueueMode; label: string; cost: Record<Depth, number>; wait: string }[] = [
+  // Live is a flat price at either depth, so the app always asks it for the full 20.
+  { value: 'live', label: 'Live', cost: { 10: 0.002, 20: 0.002 }, wait: 'Blocks the page' },
+  { value: 'priority', label: 'Priority', cost: { 10: 0.0012, 20: 0.0024 }, wait: '~1 min avg, background' },
+  { value: 'standard', label: 'Standard', cost: { 10: 0.0006, 20: 0.0012 }, wait: '5–45 min, background' },
 ];
 
 // Live requests are throttled to 6 in flight; each point currently takes ~8-10s on DataForSEO's side.
@@ -74,6 +78,8 @@ export default function LocalFinderForm({ defaults }: Props) {
   );
   const spacingKm = spacingMiles * KM_PER_MILE;
   const [queueMode, setQueueMode] = useState<QueueMode>((defaults.queueMode as QueueMode) || 'standard');
+  const [depth, setDepth] = useState<Depth>(defaults.depth === '20' ? 20 : 10);
+  const effectiveDepth: Depth = queueMode === 'live' ? 20 : depth;
 
   const osOptions =
     device === 'mobile'
@@ -216,13 +222,45 @@ export default function LocalFinderForm({ defaults }: Props) {
 
           {/* Queue mode */}
           <div>
-            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2">API mode</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-black uppercase tracking-widest text-slate-400">API mode</label>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Results</span>
+                <div
+                  role="group"
+                  aria-label="Results per point"
+                  title={queueMode === 'live' ? 'Live costs the same at either depth, so it always returns the top 20.' : undefined}
+                  className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+                >
+                  {([10, 20] as const).map((d) => {
+                    const on = effectiveDepth === d;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={on}
+                        disabled={queueMode === 'live'}
+                        onClick={() => setDepth(d)}
+                        className={`px-2.5 py-1 text-[10px] font-black transition-colors disabled:cursor-not-allowed ${
+                          on
+                            ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
+                            : 'bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        Top {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
             <input type="hidden" name="queue_mode" value={queueMode} />
+            <input type="hidden" name="depth" value={effectiveDepth} />
             <div className="grid grid-cols-3 gap-2">
               {QUEUE_MODES.map((mode) => {
                 const active = queueMode === mode.value;
                 const totalPoints = gridSize * gridSize;
-                const estCost = formatCost(totalPoints * mode.costPerPoint);
+                const estCost = formatCost(totalPoints * mode.cost[effectiveDepth]);
                 return (
                   <button
                     key={mode.value}
@@ -245,11 +283,11 @@ export default function LocalFinderForm({ defaults }: Props) {
             </div>
             <p className="text-[11px] text-slate-400 mt-2">
               {queueMode === 'live' ? (
-                <>Blocks the page for {formatLiveDuration(gridSize * gridSize)} — DataForSEO’s live endpoint has slowed down, so large grids can take several minutes.</>
+                <>Blocks the page for {formatLiveDuration(gridSize * gridSize)} — DataForSEO’s live endpoint has slowed down, so large grids can take several minutes. Live is a flat price, so it always returns the top 20.</>
               ) : queueMode === 'priority' ? (
                 <>Tasks are queued with DataForSEO’s high-priority flag. The page will auto-refresh every 10 seconds until results are ready.</>
               ) : (
-                <>Tasks are queued for standard background processing. The page will check every 30 seconds — or you can come back later.</>
+                <>Tasks are queued for standard background processing. The page will check every 10 seconds — or you can come back later.</>
               )}
             </p>
           </div>

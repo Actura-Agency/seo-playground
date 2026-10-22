@@ -29,8 +29,8 @@ export function computeGridSummary(results: GridPoint[]): GridSummary {
     ? Math.round((results.reduce((s, p) => s + (21 - Math.min(p.rank ?? 21, 21)), 0) / (totalPoints * 20)) * 100)
     : 0;
 
-  // Coverage/ARP count a "found" point as rank 1-20 (DataForSEO's local-pack depth is always 20,
-  // so every non-null rank already satisfies this — the bound is kept explicit for correctness).
+  // Coverage/ARP count a "found" point as rank 1-20. A scan can request only the top 10 (half the
+  // price), in which case every non-null rank is already <= 10 and these describe top-10 presence.
   const foundInRange = results.filter((p) => p.rank !== null && p.rank! >= 1 && p.rank! <= 20);
   const coverage = totalPoints > 0 ? (foundInRange.length / totalPoints) * 100 : 0;
   const arp = foundInRange.length > 0

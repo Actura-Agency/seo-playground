@@ -64,8 +64,11 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** Results requested per grid point. DataForSEO bills per 10, so 10 costs half of 20 (Live is a flat price). */
+export type GridDepth = 10 | 20;
+
 async function requestGridPoint(
-  keyword: string, lat: number, lng: number, language: string, auth: string,
+  keyword: string, lat: number, lng: number, language: string, auth: string, depth: GridDepth,
 ): Promise<{ items: LocalPackItem[]; cost: number; error?: string }> {
   let res: Response;
   try {
@@ -76,7 +79,7 @@ async function requestGridPoint(
         keyword,
         location_coordinate: `${lat.toFixed(6)},${lng.toFixed(6)}`,
         language_name: language,
-        depth: 20,
+        depth,
       }]),
       signal: AbortSignal.timeout(45_000),
     });
@@ -96,19 +99,19 @@ async function requestGridPoint(
 }
 
 export async function fetchOneGridPoint(
-  keyword: string, lat: number, lng: number, language: string, auth: string,
+  keyword: string, lat: number, lng: number, language: string, auth: string, depth: GridDepth = 20,
 ): Promise<{ items: LocalPackItem[]; cost: number }> {
-  let result = await requestGridPoint(keyword, lat, lng, language, auth);
+  let result = await requestGridPoint(keyword, lat, lng, language, auth, depth);
   if (result.error) {
     // Transient failures (timeouts, rate limiting) are common under concurrent load; retry once.
-    result = await requestGridPoint(keyword, lat, lng, language, auth);
+    result = await requestGridPoint(keyword, lat, lng, language, auth, depth);
   }
   return { items: result.items, cost: result.cost };
 }
 
 export async function fetchGridSearch(
   keyword: string, center: string, gridSize: number, spacingKm: number,
-  language: string, target: string, login: string, pass: string,
+  language: string, target: string, login: string, pass: string, depth: GridDepth = 20,
 ): Promise<{ results: GridPoint[]; cost: number; error?: string }> {
   const parts = center.split(',').map(Number);
   if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) {
@@ -122,7 +125,7 @@ export async function fetchGridSearch(
   const pointResults = await mapWithConcurrency(
     coords, 6,
     async ({ row, col, lat, lng }) => {
-      const { items: rawItems, cost } = await fetchOneGridPoint(keyword, lat, lng, language, auth);
+      const { items: rawItems, cost } = await fetchOneGridPoint(keyword, lat, lng, language, auth, depth);
 
       const isTarget = (item: LocalPackItem) =>
         (item.title ?? '').toLowerCase().includes(targetLower) ||
@@ -154,6 +157,7 @@ export async function fetchGridSearch(
 export async function postGridTasksQueue(
   keyword: string, center: string, gridSize: number, spacingKm: number,
   language: string, login: string, pass: string, priorityMode: 'priority' | 'standard' = 'standard',
+  depth: GridDepth = 20,
 ): Promise<{ taskPoints: GridTaskPoint[]; cost: number; error?: string }> {
   const parts = center.split(',').map(Number);
   if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) {
@@ -175,7 +179,7 @@ export async function postGridTasksQueue(
       keyword,
       location_coordinate: `${lat.toFixed(6)},${lng.toFixed(6)}`,
       language_name: language,
-      depth: 20,
+      depth,
       priority,
     }));
     const res = await fetch('https://api.dataforseo.com/v3/serp/google/local_finder/task_post', {
@@ -202,10 +206,10 @@ export async function postGridTasksQueue(
 
 export function stableGridId(
   keyword: string, center: string, gridSize: number,
-  spacingKm: number, target: string, queueMode: string,
+  spacingKm: number, target: string, queueMode: string, depth: GridDepth = 20,
 ): string {
   const window = Math.floor(Date.now() / 60_000);
-  const key = `${window}|${keyword}|${center}|${gridSize}|${spacingKm}|${target}|${queueMode}`;
+  const key = `${window}|${keyword}|${center}|${gridSize}|${spacingKm}|${target}|${queueMode}|${depth}`;
   let h = 0x811c9dc5;
   for (let i = 0; i < key.length; i++) {
     h ^= key.charCodeAt(i);
