@@ -75,6 +75,40 @@ export function formatScheduleDate(ts: number, tz = AUTOMATION_TZ): string {
   });
 }
 
+export interface NewScanSettings {
+  keyword: string;
+  target: string;
+  center: string;
+  gridSize: number;
+  spacingKm: number;
+  language: string;
+}
+
+/**
+ * Validates scan settings sent straight from the Geo-Grid form ("Schedule instead of running
+ * now"), for a client that has no saved scan yet. Returns null if anything is missing or invalid.
+ */
+export function parseNewScanSettings(get: (key: string) => string | null | undefined): NewScanSettings | null {
+  const keyword = (get('keyword') ?? '').trim().slice(0, 200);
+  const target = (get('grid_target') ?? '').trim().slice(0, 200);
+  const coord = (get('location_coordinate') ?? '').trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  const gridSize = parseInt(get('grid_size') ?? '', 10);
+  const spacingKm = parseFloat(get('spacing_km') ?? '');
+  if (!keyword || !target || !coord) return null;
+  const lat = Number(coord[1]);
+  const lng = Number(coord[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  // Same bounds the manual scan enforces (3x3 to 13x13); spacing stays within the form's 0.25-5 mi presets.
+  if (![3, 5, 7, 9, 11, 13].includes(gridSize)) return null;
+  if (!(spacingKm >= 0.4 && spacingKm <= 8.1)) return null;
+  return {
+    keyword, target,
+    center: `${lat.toFixed(6)},${lng.toFixed(6)}`,
+    gridSize, spacingKm,
+    language: (get('language') ?? '').trim() || 'English',
+  };
+}
+
 /** Average runs per month, for the monthly cost estimate. */
 export function runsPerMonth(frequency: GridScheduleFrequency): number {
   return frequency === 'daily' ? 30.4 : frequency === 'weekly' ? 4.35 : 1;

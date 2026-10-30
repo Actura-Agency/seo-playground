@@ -2,13 +2,14 @@ export const dynamic = 'force-dynamic';
 
 import {
   getGridSchedules, getGridSchedule, getGridEntry, getRecentManualGridScans, getGridSearchesBySchedule,
-  type GridSchedule,
+  getSetting, type GridSchedule,
 } from '@/lib/db';
 import {
   describeSchedule, formatScheduleDate, AUTOMATION_TZ_LABEL,
 } from '../../local-finder/grid-schedule';
 import { isGridSchedulerEnabled, getGridSchedulerHeartbeat } from '../../local-finder/grid-scheduler';
-import ScheduleForm from './ScheduleForm';
+import { KM_PER_MILE } from '../../local-finder/grid-form-options';
+import ScheduleForm, { type ScheduleFormValues } from './ScheduleForm';
 import DeleteScheduleButton from './DeleteScheduleButton';
 import PendingButton from '@/components/PendingButton';
 import { toggleScheduleAction } from './actions';
@@ -16,6 +17,17 @@ import { toggleScheduleAction } from './actions';
 interface SearchParams {
   from?: string;
   edit?: string;
+  /** "1" opens a blank new-client form; the Geo-Grid form's "Schedule instead" button also sends its fields below. */
+  new?: string;
+  error?: string;
+  keyword?: string;
+  grid_target?: string;
+  location_coordinate?: string;
+  grid_size?: string;
+  spacing_km?: string;
+  language?: string;
+  queue_mode?: string;
+  depth?: string;
 }
 
 /** The scheduler ticks every minute; a heartbeat older than this means it isn't running. */
@@ -41,9 +53,55 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
   const params = await searchParams;
   const schedules = getGridSchedules();
 
-  // Form: editing an existing schedule, or creating one from a saved scan.
+  // The form opens to edit a schedule, pre-filled from a saved scan, pre-filled from the Geo-Grid
+  // form ("Schedule instead of running now"), or blank for a brand-new client.
   const editing = params.edit ? getGridSchedule(parseInt(params.edit, 10)) : null;
   const fromScan = !editing && params.from ? getGridEntry(params.from) : null;
+  const isNew = !editing && !fromScan && params.new === '1';
+  const newTiming = { label: '', frequency: 'weekly' as const, dayOfWeek: 1, dayOfMonth: 1, timeOfDay: '08:00' };
+
+  let form: { scheduleId?: number; initial: ScheduleFormValues; title: string; note?: string } | null = null;
+  if (editing) {
+    form = {
+      scheduleId: editing.id,
+      title: 'Edit schedule',
+      note: 'Changes apply from the next scheduled run. Past runs stay in history.',
+      initial: {
+        keyword: editing.keyword, target: editing.target, center: editing.center,
+        gridSize: editing.grid_size, spacingKm: editing.spacing_km, label: editing.label,
+        frequency: editing.frequency, dayOfWeek: editing.day_of_week ?? 1, dayOfMonth: editing.day_of_month ?? 1,
+        timeOfDay: editing.time_of_day, queueMode: editing.queue_mode, depth: editing.depth === 10 ? 10 : 20,
+      },
+    };
+  } else if (fromScan) {
+    form = {
+      title: 'New schedule',
+      note: `Pre-filled from the ${formatScheduleDate(fromScan.ts)} scan. Change anything you need.`,
+      initial: {
+        ...newTiming,
+        keyword: fromScan.keyword, target: fromScan.target, center: fromScan.center,
+        gridSize: fromScan.grid_size, spacingKm: fromScan.spacing_km, label: fromScan.target,
+        // Cheapest by default; the form still offers every mode.
+        queueMode: 'standard', depth: 10,
+      },
+    };
+  } else if (isNew) {
+    const mode = params.queue_mode === 'live' || params.queue_mode === 'priority' ? params.queue_mode : 'standard';
+    const gridSize = parseInt(params.grid_size ?? '', 10);
+    const spacingKm = parseFloat(params.spacing_km ?? '');
+    form = {
+      title: 'New client schedule',
+      note: 'Nothing is scanned (or billed) until the first scheduled time.',
+      initial: {
+        ...newTiming,
+        keyword: params.keyword ?? '', target: params.grid_target ?? '', center: params.location_coordinate ?? '',
+        gridSize: [3, 5, 7, 9, 11, 13].includes(gridSize) ? gridSize : 11,
+        spacingKm: spacingKm > 0 ? spacingKm : KM_PER_MILE,
+        label: params.grid_target ?? '',
+        queueMode: mode, depth: mode !== 'live' && params.depth === '20' ? 20 : 10,
+      },
+    };
+  }
 
   const schedulerOn = isGridSchedulerEnabled();
   const heartbeat = getGridSchedulerHeartbeat();
@@ -71,41 +129,26 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
         </div>
       )}
 
-      {editing && (
-        <ScheduleForm
-          scheduleId={editing.id}
-          scan={{ keyword: editing.keyword, target: editing.target, gridSize: editing.grid_size, spacingKm: editing.spacing_km }}
-          defaults={{
-            label: editing.label,
-            frequency: editing.frequency,
-            dayOfWeek: editing.day_of_week ?? 1,
-            dayOfMonth: editing.day_of_month ?? 1,
-            timeOfDay: editing.time_of_day,
-            queueMode: editing.queue_mode,
-            depth: editing.depth === 10 ? 10 : 20,
-          }}
-        />
-      )}
-      {fromScan && (
-        <ScheduleForm
-          fromScanId={fromScan.id}
-          scan={{ keyword: fromScan.keyword, target: fromScan.target, gridSize: fromScan.grid_size, spacingKm: fromScan.spacing_km }}
-          defaults={{
-            label: fromScan.target,
-            frequency: 'weekly',
-            dayOfWeek: 1,
-            dayOfMonth: 1,
-            timeOfDay: '08:00',
-            // Cheapest by default; the form still offers every mode.
-            queueMode: 'standard',
-            depth: 10,
-          }}
-        />
+      {params.error === 'invalid' && (
+        <div className="bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl px-4 py-3">
+          The schedule wasn&apos;t saved: the keyword, target business and map center are required, and the center must be a valid lat,lng.
+        </div>
       )}
 
-      {!editing && !fromScan && (
+      {form && <ScheduleForm {...form} defaultCenter={getSetting('default_coordinates') ?? ''} />}
+
+      {!form && (
         <form method="GET" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-          <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">New schedule from a saved scan</label>
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <label className="block text-xs font-black uppercase tracking-widest text-slate-400">New schedule from a saved scan</label>
+            <a
+              href="/dashboard/geo-grid/automation?new=1"
+              className="text-[11px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-700 transition-colors"
+              title="Schedule a client you haven't scanned yet"
+            >
+              Set up a new client →
+            </a>
+          </div>
           {recentScans.length > 0 ? (
             <div className="flex gap-2">
               <select
@@ -127,7 +170,7 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
               </button>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">Run a geo-grid scan first, then schedule it from here or from its &quot;Schedule&quot; link in the history.</p>
+            <p className="text-sm text-slate-400">No saved scans yet. Use &quot;Set up a new client&quot; to schedule one from scratch.</p>
           )}
         </form>
       )}
@@ -159,8 +202,9 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
                     <tr key={s.id} className="align-top">
                       <td className="px-5 py-3 min-w-[220px]">
                         <p className="font-bold text-slate-800 dark:text-slate-200">{s.label}</p>
+                        <p className="text-[13px] text-slate-600 dark:text-slate-300">&ldquo;{s.keyword}&rdquo;</p>
                         <p className="text-[11px] text-slate-400">
-                          {s.keyword} · {s.grid_size}×{s.grid_size} · {s.queue_mode === 'standard' ? 'Standard' : s.queue_mode === 'priority' ? 'Priority' : 'Live'}, Top {s.depth}
+                          {s.grid_size}×{s.grid_size} · {s.queue_mode === 'standard' ? 'Standard' : s.queue_mode === 'priority' ? 'Priority' : 'Live'}, Top {s.depth}
                         </p>
                         {runs.length > 0 && (
                           <details className="mt-1.5">

@@ -10,7 +10,7 @@ process.env.DB_PATH = path.join(tmpDir, 'test.db');
 import {
   createGridSchedule, getGridSchedule, getDueGridSchedules, claimGridScheduleRun, setGridScheduleRunResult,
   syncRunningGridSchedules, failInterruptedGridSchedules, setGridScheduleEnabled, saveGridSearchPending,
-  updateGridProgress, getGridHistory, getGridSearchesBySchedule, type GridScheduleInput,
+  updateGridProgress, getGridHistory, getGridSearchesBySchedule, updateGridSchedule, type GridScheduleInput,
 } from './db';
 
 afterAll(() => {
@@ -93,5 +93,18 @@ describe('grid schedules', () => {
     const s = getGridSchedule(id)!;
     expect(s.last_status).toBe('failed');
     expect(s.last_error).toMatch(/no results/);
+  });
+
+  it('lets every setting be edited later, including business, location and grid', () => {
+    const id = createGridSchedule(input, 1_000);
+    updateGridSchedule(id, {
+      ...input, label: 'Joe North', keyword: 'drain cleaning', target: 'joes plumbing north',
+      center: '47.7,-122.4', grid_size: 7, spacing_km: 2, queue_mode: 'priority', depth: 20,
+      frequency: 'monthly', day_of_month: 15,
+    }, 5_000);
+    const s = getGridSchedule(id)!;
+    expect([s.label, s.keyword, s.target, s.center, s.grid_size, s.spacing_km]).toEqual(
+      ['Joe North', 'drain cleaning', 'joes plumbing north', '47.7,-122.4', 7, 2]);
+    expect([s.queue_mode, s.depth, s.frequency, s.day_of_month, s.next_run_at]).toEqual(['priority', 20, 'monthly', 15, 5_000]);
   });
 });

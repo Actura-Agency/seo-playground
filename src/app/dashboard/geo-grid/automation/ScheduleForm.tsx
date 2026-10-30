@@ -1,55 +1,143 @@
 'use client';
 
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import PendingButton from '@/components/PendingButton';
 import { QUEUE_MODES, type QueueMode, type Depth } from '../../local-finder/grid-pricing';
+import { GRID_SIZES, KM_PER_MILE, MILE_SPACING_OPTIONS, nearestMilePreset } from '../../local-finder/grid-form-options';
 import { WEEKDAYS, AUTOMATION_TZ_LABEL, runsPerMonth } from '../../local-finder/grid-schedule';
 import { saveScheduleAction } from './actions';
 
+const MapPicker = lazy(() => import('../../local-finder/MapPicker'));
+
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
+export interface ScheduleFormValues {
+  keyword: string;
+  target: string;
+  /** "lat,lng"; empty for a brand-new client until a point is picked. */
+  center: string;
+  gridSize: number;
+  spacingKm: number;
+  label: string;
+  frequency: Frequency;
+  dayOfWeek: number;
+  dayOfMonth: number;
+  timeOfDay: string;
+  queueMode: QueueMode;
+  depth: Depth;
+}
+
 interface Props {
-  /** Set when editing; otherwise `fromScanId` names the saved scan the new schedule copies. */
+  /** Set when editing an existing schedule; otherwise the form creates a new one. */
   scheduleId?: number;
-  fromScanId?: string;
-  scan: { keyword: string; target: string; gridSize: number; spacingKm: number };
-  defaults: {
-    label: string;
-    frequency: Frequency;
-    dayOfWeek: number;
-    dayOfMonth: number;
-    timeOfDay: string;
-    queueMode: QueueMode;
-    depth: Depth;
-  };
+  /** Pre-filled values: from the schedule being edited, a saved scan, the Geo-Grid form, or blank. */
+  initial: ScheduleFormValues;
+  /** Where the map starts when there is no center yet (the app's default coordinates setting). */
+  defaultCenter: string;
+  title: string;
+  /** Optional one-line note under the title. */
+  note?: string;
 }
 
 const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5';
-const inputCls = 'w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800';
+const inputCls = 'w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 transition-all';
 
-export default function ScheduleForm({ scheduleId, fromScanId, scan, defaults }: Props) {
-  const [frequency, setFrequency] = useState<Frequency>(defaults.frequency);
-  const [queueMode, setQueueMode] = useState<QueueMode>(defaults.queueMode);
-  const [depth, setDepth] = useState<Depth>(defaults.depth);
+export default function ScheduleForm({ scheduleId, initial, defaultCenter, title, note }: Props) {
+  const [coordinate, setCoordinate] = useState(initial.center || defaultCenter);
+  const [gridSize, setGridSize] = useState(initial.gridSize);
+  const [spacingMiles, setSpacingMiles] = useState(nearestMilePreset(initial.spacingKm / KM_PER_MILE));
+  const spacingKm = spacingMiles * KM_PER_MILE;
+  const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
+  const [queueMode, setQueueMode] = useState<QueueMode>(initial.queueMode);
+  const [depth, setDepth] = useState<Depth>(initial.depth);
   const effectiveDepth: Depth = queueMode === 'live' ? 20 : depth;
-  const points = scan.gridSize * scan.gridSize;
+  const points = gridSize * gridSize;
 
   return (
     <form action={saveScheduleAction} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
-      {scheduleId ? <input type="hidden" name="schedule_id" value={scheduleId} /> : <input type="hidden" name="from" value={fromScanId} />}
+      {scheduleId && <input type="hidden" name="schedule_id" value={scheduleId} />}
+      {/* Geo-grid scans always search in English (same as the Geo-Grid form). */}
+      <input type="hidden" name="language" value="English" />
 
       <div>
-        <p className="text-sm font-black text-slate-900 dark:text-white">{scheduleId ? 'Edit schedule' : 'New schedule'}</p>
-        <p className="text-[11px] text-slate-400 mt-0.5">
-          {scan.keyword} · Target: <span className="font-bold text-slate-600 dark:text-slate-300">{scan.target}</span>
-          {' · '}{scan.gridSize}×{scan.gridSize} grid · {(scan.spacingKm / 1.609344).toFixed(2)} mi spacing
-        </p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">{title}</p>
+        {note && <p className="text-[11px] text-blue-600 mt-0.5">{note}</p>}
+      </div>
+
+      {/* What to scan: the same fields as the Geo-Grid form */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className={labelCls}>Keyword <span className="text-red-400">*</span></label>
+          <input type="text" name="keyword" defaultValue={initial.keyword} required maxLength={200} placeholder="e.g. plumber, italian restaurant, dentist…" className={inputCls} />
+          <p className="text-[11px] text-slate-400 mt-1">Searched on every scheduled run.</p>
+        </div>
+        <div>
+          <label className={labelCls}>Target business <span className="text-red-400">*</span></label>
+          <input type="text" name="grid_target" defaultValue={initial.target} required maxLength={200} placeholder="e.g. Best Plumbing or bestplumbing.com" className={inputCls} />
+          <p className="text-[11px] text-slate-400 mt-1">Name or domain — partial match, case-insensitive.</p>
+        </div>
       </div>
 
       <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-400">
+            Grid center (map) <span className="text-red-400">*</span>
+          </label>
+          {coordinate && (
+            <button
+              type="button"
+              onClick={() => setCoordinate('')}
+              className="text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-red-500 transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Suspense fallback={<div className="h-64 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />}>
+            <MapPicker
+              coordinate={coordinate}
+              onChange={setCoordinate}
+              showGrid={!!coordinate}
+              gridSize={gridSize}
+              spacingKm={spacingKm}
+            />
+          </Suspense>
+          <input
+            type="text"
+            name="location_coordinate"
+            value={coordinate}
+            onChange={(e) => setCoordinate(e.target.value)}
+            required
+            placeholder="Click on the map to set a point — or type lat,lng"
+            className="w-full px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-mono text-slate-700 dark:text-slate-300 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelCls}>Grid size</label>
+          <select name="grid_size" value={gridSize} onChange={(e) => setGridSize(parseInt(e.target.value, 10))} className={inputCls}>
+            {GRID_SIZES.map((g) => <option key={g} value={g}>{g}×{g} ({g * g} points)</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Spacing (mi)</label>
+          <input type="hidden" name="spacing_km" value={spacingKm} />
+          <select value={spacingMiles} onChange={(e) => setSpacingMiles(parseFloat(e.target.value))} className={inputCls}>
+            {MILE_SPACING_OPTIONS.map((mi) => <option key={mi} value={mi}>{mi} mi</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* When to scan */}
+      <div className="pt-2 border-t border-slate-100 dark:border-slate-800" />
+
+      <div>
         <label className={labelCls}>Name</label>
-        <input type="text" name="label" defaultValue={defaults.label} maxLength={100} className={inputCls} />
-        <p className="text-[11px] text-slate-400 mt-1">Shown on the automation list. Starts as the business name; change it only if you want.</p>
+        <input type="text" name="label" defaultValue={initial.label} maxLength={100} placeholder="Defaults to the business name" className={inputCls} />
+        <p className="text-[11px] text-slate-400 mt-1">Shown on the automation list.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -77,11 +165,11 @@ export default function ScheduleForm({ scheduleId, fromScanId, scan, defaults }:
         <div>
           <label className={labelCls}>Day</label>
           {frequency === 'weekly' ? (
-            <select name="day_of_week" defaultValue={defaults.dayOfWeek} className={inputCls}>
+            <select name="day_of_week" defaultValue={initial.dayOfWeek} className={inputCls}>
               {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
             </select>
           ) : frequency === 'monthly' ? (
-            <select name="day_of_month" defaultValue={defaults.dayOfMonth} className={inputCls}>
+            <select name="day_of_month" defaultValue={initial.dayOfMonth} className={inputCls}>
               {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>Day {d}</option>)}
             </select>
           ) : (
@@ -90,7 +178,7 @@ export default function ScheduleForm({ scheduleId, fromScanId, scan, defaults }:
         </div>
         <div>
           <label className={labelCls}>Time</label>
-          <input type="time" name="time_of_day" defaultValue={defaults.timeOfDay} required className={inputCls} />
+          <input type="time" name="time_of_day" defaultValue={initial.timeOfDay} required className={inputCls} />
           <p className="text-[11px] text-slate-400 mt-1">{AUTOMATION_TZ_LABEL}</p>
         </div>
       </div>

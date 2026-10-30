@@ -3,6 +3,7 @@
 import { useState, lazy, Suspense } from 'react';
 import { LANGUAGES } from '@/lib/geo-options';
 import { QUEUE_MODES, type QueueMode, type Depth } from './grid-pricing';
+import { KM_PER_MILE, MILE_SPACING_OPTIONS, nearestMilePreset } from './grid-form-options';
 
 const MapPicker = lazy(() => import('./MapPicker'));
 
@@ -42,17 +43,6 @@ function formatLiveDuration(totalPoints: number) {
   return `~${Math.ceil(seconds / 60)} min`;
 }
 
-// 1 mile = 1.609344 km (exact, international mile).
-const KM_PER_MILE = 1.609344;
-const MILE_SPACING_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
-
-/** Snaps an arbitrary miles value (e.g. converted from an old saved km spacing) to the nearest preset option. */
-function nearestMilePreset(miles: number): number {
-  return MILE_SPACING_OPTIONS.reduce((closest, option) =>
-    Math.abs(option - miles) < Math.abs(closest - miles) ? option : closest,
-  );
-}
-
 export default function LocalFinderForm({ defaults }: Props) {
   const isGrid = defaults.forceGridMode === true;
 
@@ -78,7 +68,15 @@ export default function LocalFinderForm({ defaults }: Props) {
   const defaultOs = osOptions.some((o) => o.value === defaults.os) ? defaults.os : osOptions[0].value;
 
   return (
-    <form method="GET" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4" onSubmit={() => setIsLoading(true)}>
+    <form
+      method="GET"
+      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4"
+      onSubmit={(e) => {
+        // "Schedule instead" just opens the schedule screen; only a real run shows the spinner.
+        const submitter = (e.nativeEvent as SubmitEvent).submitter;
+        if (!submitter?.hasAttribute('data-schedule')) setIsLoading(true);
+      }}
+    >
       {/* Keyword */}
       <div>
         <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">
@@ -370,6 +368,20 @@ export default function LocalFinderForm({ defaults }: Props) {
           </span>
         ) : (isGrid ? 'Run geo-grid' : 'Search')}
       </button>
+      {isGrid && (
+        <button
+          type="submit"
+          name="new"
+          value="1"
+          formAction="/dashboard/geo-grid/automation"
+          data-schedule
+          disabled={isLoading}
+          className="w-full -mt-2 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:border-blue-300 dark:hover:text-blue-400 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          title="Set up a recurring scan with these settings. Nothing runs (or is billed) until the first scheduled time."
+        >
+          Schedule instead of running now
+        </button>
+      )}
     </form>
   );
 }

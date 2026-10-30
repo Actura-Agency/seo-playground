@@ -1533,11 +1533,10 @@ export interface GridSchedule {
   created_at: number;
 }
 
-export type GridScheduleTiming = Pick<GridSchedule,
-  'label' | 'queue_mode' | 'depth' | 'frequency' | 'day_of_week' | 'day_of_month' | 'time_of_day'>;
-
-export type GridScheduleInput = GridScheduleTiming &
-  Pick<GridSchedule, 'keyword' | 'target' | 'center' | 'grid_size' | 'spacing_km' | 'language'>;
+/** Everything the schedule form sets. All of it stays editable after creation. */
+export type GridScheduleInput = Pick<GridSchedule,
+  'label' | 'keyword' | 'target' | 'center' | 'grid_size' | 'spacing_km' | 'language'
+  | 'queue_mode' | 'depth' | 'frequency' | 'day_of_week' | 'day_of_month' | 'time_of_day'>;
 
 type GridScheduleRow = Omit<GridSchedule, 'enabled'> & { enabled: number };
 
@@ -1567,13 +1566,15 @@ export function createGridSchedule(input: GridScheduleInput, nextRunAt: number):
   return Number(result.lastInsertRowid);
 }
 
-/** Edits a schedule's name, timing and scan mode. Keyword, target and location stay as created. */
-export function updateGridSchedule(id: number, input: GridScheduleTiming, nextRunAt: number | null): void {
+/** Saves every setting of a schedule (what, when and how it scans). Run history is kept. */
+export function updateGridSchedule(id: number, input: GridScheduleInput, nextRunAt: number | null): void {
   getDb()
-    .prepare(`UPDATE grid_schedules SET label = ?, queue_mode = ?, depth = ?, frequency = ?, day_of_week = ?,
-      day_of_month = ?, time_of_day = ?, next_run_at = ? WHERE id = ?`)
-    .run(input.label, input.queue_mode, input.depth, input.frequency, input.day_of_week, input.day_of_month,
-      input.time_of_day, nextRunAt, id);
+    .prepare(`UPDATE grid_schedules SET label = ?, keyword = ?, target = ?, center = ?, grid_size = ?, spacing_km = ?,
+      language = ?, queue_mode = ?, depth = ?, frequency = ?, day_of_week = ?, day_of_month = ?, time_of_day = ?,
+      next_run_at = ? WHERE id = ?`)
+    .run(input.label, input.keyword, input.target, input.center, input.grid_size, input.spacing_km, input.language,
+      input.queue_mode, input.depth, input.frequency, input.day_of_week, input.day_of_month, input.time_of_day,
+      nextRunAt, id);
 }
 
 /** Pausing clears next_run_at; resuming sets a fresh one, so slots missed while paused never fire. */
