@@ -1348,6 +1348,8 @@ export interface GridPoint {
   lng?: number;
   rank: number | null;
   items?: GridLocalItem[];
+  /** When the app collected this point (ms). Only queued scans set it; used to show how long a scan took. */
+  arrived_at?: number;
 }
 
 /** Mirrors the ATO/avg-rank formula in grid-insights.ts's computeGridSummary — duplicated (not imported) so lib/ doesn't depend on app/ code. */

@@ -25,6 +25,14 @@ interface SearchParams {
 }
 
 // Shown in the team's timezone (the same one automation schedules use), not the server's UTC clock.
+/** "4 min 05 s" / "42 s". */
+function formatDuration(ms: number) {
+  const total = Math.round(ms / 1000);
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return min > 0 ? `${min} min ${String(sec).padStart(2, '0')} s` : `${sec} s`;
+}
+
 function formatDate(ts: number) {
   return new Date(ts).toLocaleString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
@@ -103,6 +111,10 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
 
   const gridHistory = getGridHistory();
   const scheduleLabel = gridEntry?.schedule_id !== undefined ? getGridSchedule(gridEntry.schedule_id)?.label : undefined;
+  // How long a queued scan took, from start to its last point arriving (older scans didn't record this).
+  const lastArrival = gridResults?.reduce((m, p) => Math.max(m, p.arrived_at ?? 0), 0) ?? 0;
+  const finishedIn = gridEntry && gridEntry.status === 'done' && lastArrival > gridEntry.ts
+    ? formatDuration(lastArrival - gridEntry.ts) : null;
 
   const formDefaults = {
     keyword: (params.keyword ?? gridEntry?.keyword ?? '').toString(),
@@ -210,6 +222,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
             {gridResults && gridEntry && (
               <p className="text-[11px] text-slate-400 mb-2">
                 Scanned {formatDate(gridEntry.ts)} PT
+                {finishedIn && <> · Finished in {finishedIn}</>}
                 {gridEntry.schedule_id !== undefined && (
                   <> · Automated{scheduleLabel ? ` (${scheduleLabel})` : ''}</>
                 )}
