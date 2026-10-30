@@ -1,0 +1,179 @@
+'use client';
+
+import { useState } from 'react';
+import PendingButton from '@/components/PendingButton';
+import { QUEUE_MODES, type QueueMode, type Depth } from '../../local-finder/grid-pricing';
+import { WEEKDAYS, AUTOMATION_TZ_LABEL, runsPerMonth } from '../../local-finder/grid-schedule';
+import { saveScheduleAction } from './actions';
+
+type Frequency = 'daily' | 'weekly' | 'monthly';
+
+interface Props {
+  /** Set when editing; otherwise `fromScanId` names the saved scan the new schedule copies. */
+  scheduleId?: number;
+  fromScanId?: string;
+  scan: { keyword: string; target: string; gridSize: number; spacingKm: number };
+  defaults: {
+    label: string;
+    frequency: Frequency;
+    dayOfWeek: number;
+    dayOfMonth: number;
+    timeOfDay: string;
+    queueMode: QueueMode;
+    depth: Depth;
+  };
+}
+
+const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5';
+const inputCls = 'w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800';
+
+export default function ScheduleForm({ scheduleId, fromScanId, scan, defaults }: Props) {
+  const [frequency, setFrequency] = useState<Frequency>(defaults.frequency);
+  const [queueMode, setQueueMode] = useState<QueueMode>(defaults.queueMode);
+  const [depth, setDepth] = useState<Depth>(defaults.depth);
+  const effectiveDepth: Depth = queueMode === 'live' ? 20 : depth;
+  const points = scan.gridSize * scan.gridSize;
+
+  return (
+    <form action={saveScheduleAction} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+      {scheduleId ? <input type="hidden" name="schedule_id" value={scheduleId} /> : <input type="hidden" name="from" value={fromScanId} />}
+
+      <div>
+        <p className="text-sm font-black text-slate-900 dark:text-white">{scheduleId ? 'Edit schedule' : 'New schedule'}</p>
+        <p className="text-[11px] text-slate-400 mt-0.5">
+          {scan.keyword} · Target: <span className="font-bold text-slate-600 dark:text-slate-300">{scan.target}</span>
+          {' · '}{scan.gridSize}×{scan.gridSize} grid · {(scan.spacingKm / 1.609344).toFixed(2)} mi spacing
+        </p>
+      </div>
+
+      <div>
+        <label className={labelCls}>Name</label>
+        <input type="text" name="label" defaultValue={defaults.label} maxLength={100} className={inputCls} />
+        <p className="text-[11px] text-slate-400 mt-1">Shown on the automation list. Starts as the business name; change it only if you want.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+          <label className={labelCls}>Frequency</label>
+          <input type="hidden" name="frequency" value={frequency} />
+          <div className="flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            {(['daily', 'weekly', 'monthly'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={frequency === f}
+                onClick={() => setFrequency(f)}
+                className={`flex-1 px-2 py-2.5 text-xs font-black capitalize transition-colors ${
+                  frequency === f
+                    ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
+                    : 'bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>Day</label>
+          {frequency === 'weekly' ? (
+            <select name="day_of_week" defaultValue={defaults.dayOfWeek} className={inputCls}>
+              {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+            </select>
+          ) : frequency === 'monthly' ? (
+            <select name="day_of_month" defaultValue={defaults.dayOfMonth} className={inputCls}>
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>Day {d}</option>)}
+            </select>
+          ) : (
+            <p className="px-1 py-2.5 text-sm text-slate-400">Every day</p>
+          )}
+        </div>
+        <div>
+          <label className={labelCls}>Time</label>
+          <input type="time" name="time_of_day" defaultValue={defaults.timeOfDay} required className={inputCls} />
+          <p className="text-[11px] text-slate-400 mt-1">{AUTOMATION_TZ_LABEL}</p>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-400">API mode</label>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Results</span>
+            <div
+              role="group"
+              aria-label="Results per point"
+              title={queueMode === 'live' ? 'Live costs the same at either depth, so it always returns the top 20.' : undefined}
+              className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+            >
+              {([10, 20] as const).map((d) => {
+                const on = effectiveDepth === d;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={queueMode === 'live'}
+                    onClick={() => setDepth(d)}
+                    className={`px-2.5 py-1 text-[10px] font-black transition-colors disabled:cursor-not-allowed ${
+                      on
+                        ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
+                        : 'bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    Top {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <input type="hidden" name="queue_mode" value={queueMode} />
+        <input type="hidden" name="depth" value={effectiveDepth} />
+        <div className="grid grid-cols-3 gap-2">
+          {QUEUE_MODES.map((mode) => {
+            const active = queueMode === mode.value;
+            const perRun = points * mode.cost[effectiveDepth];
+            return (
+              <button
+                key={mode.value}
+                type="button"
+                onClick={() => setQueueMode(mode.value)}
+                className={`flex flex-col gap-0.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                  active
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <span className={`text-xs font-black ${active ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                  {mode.label}
+                </span>
+                <span className={`text-[10px] font-mono ${active ? 'text-blue-500' : 'text-slate-400'}`}>${perRun.toFixed(4)} / scan</span>
+                <span className="text-[10px] text-slate-400">≈ ${(perRun * runsPerMonth(frequency)).toFixed(2)} / month</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-2">
+          Standard is the cheapest and nobody waits on an automated scan, so it&apos;s the default. Results land in Grid Search History like a manual scan.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <PendingButton
+          type="submit"
+          pendingChildren="Saving…"
+          className="flex-1 bg-slate-900 dark:bg-white dark:text-slate-900 text-white font-black uppercase tracking-widest text-xs py-3 rounded-xl hover:bg-blue-600 dark:hover:bg-blue-500 dark:hover:text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {scheduleId ? 'Save changes' : 'Create schedule'}
+        </PendingButton>
+        <a
+          href="/dashboard/geo-grid/automation"
+          className="px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+        >
+          Cancel
+        </a>
+      </div>
+    </form>
+  );
+}

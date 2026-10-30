@@ -9,7 +9,7 @@ import {
   Gauge, Lightbulb, BrainCircuit, MessageSquare, Star, Flame, Cpu, ShieldCheck, Grid3X3,
   Sparkles, Target, Layers, Network, LineChart, Tag, ScanText,
   History, Copy, BarChart3, BookOpen, Server, Bot, Radar, Eye, Waypoints, Megaphone,
-  ChevronDown,
+  ChevronDown, CalendarClock, ListFilter,
 } from 'lucide-react';
 
 const sections = [
@@ -23,7 +23,9 @@ const sections = [
   {
     label: 'SERP',
     items: [
-      { name: 'Geo-Grid Ranking', href: '/dashboard/geo-grid', icon: Grid3X3 },
+      { name: 'Geo-Grid Ranking', href: '/dashboard/geo-grid', icon: Grid3X3, exact: true },
+      { name: 'All Grid Scans', href: '/dashboard/geo-grid/scans', icon: ListFilter },
+      { name: 'Grid Automation', href: '/dashboard/geo-grid/automation', icon: CalendarClock },
       { name: 'SERP Checker', href: '/dashboard/serp', icon: Globe },
       { name: 'Local Finder', href: '/dashboard/local-finder', icon: MapPin },
     ],

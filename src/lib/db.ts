@@ -514,6 +514,34 @@ function initSchema(db: Database.Database) {
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rank_checks_kw ON rank_checks(keyword_id, checked_at DESC)`);
 
+  // Recurring geo-grid scans. Each row copies the settings of the saved scan it was created from;
+  // next_run_at (ms) is advanced *before* a run starts, so a slot can never fire twice.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS grid_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL,
+      keyword TEXT NOT NULL,
+      target TEXT NOT NULL,
+      center TEXT NOT NULL,
+      grid_size INTEGER NOT NULL,
+      spacing_km REAL NOT NULL,
+      language TEXT NOT NULL,
+      queue_mode TEXT NOT NULL,
+      depth INTEGER NOT NULL,
+      frequency TEXT NOT NULL,
+      day_of_week INTEGER,
+      day_of_month INTEGER,
+      time_of_day TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      next_run_at INTEGER,
+      last_run_at INTEGER,
+      last_scan_id TEXT,
+      last_status TEXT,
+      last_error TEXT,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
   // Migrations — add columns that may not exist in older DBs. Only the expected
   // "column already exists" error is swallowed; anything else (a real syntax error, a
   // locked/corrupt DB) rethrows instead of failing silently.
@@ -525,6 +553,8 @@ function initSchema(db: Database.Database) {
   addColumnIfMissing(db, 'grid_searches', `ADD COLUMN queue_mode TEXT NOT NULL DEFAULT 'live'`);
   // Results per grid point (10 or 20). Every scan before this column existed used 20.
   addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN depth INTEGER NOT NULL DEFAULT 20');
+  // Set when the scan was started by a grid_schedules entry (automation); NULL for manual scans.
+  addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN schedule_id INTEGER');
   addColumnIfMissing(db, 'reviews_tasks', 'ADD COLUMN meta TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN keyword TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN technology TEXT');
@@ -1287,6 +1317,8 @@ export interface GridSearchEntry {
   queue_mode: GridQueueMode;
   depth: number;
   summary?: GridHistorySummary;
+  /** grid_schedules.id when an automated schedule started this scan; undefined for manual scans. */
+  schedule_id?: number;
 }
 
 export interface GridTaskPoint {
@@ -1338,24 +1370,31 @@ function summarizeGridResults(resultsJson: string | null): GridHistorySummary | 
   return { totalPoints, foundCount: ranked.length, avgRank, top3Count, ato };
 }
 
+type GridSearchRow = {
+  id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number;
+  language: string; cost: number | null; status: string; queue_mode: string; depth: number | null;
+  schedule_id: number | null; results: string | null;
+};
+
 export function getGridHistory(): GridSearchEntry[] {
   const rows = getDb()
-    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, results FROM grid_searches ORDER BY ts DESC LIMIT 20')
-    .all() as Array<{ id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; depth: number | null; results: string | null }>;
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, schedule_id, results FROM grid_searches ORDER BY ts DESC LIMIT 50')
+    .all() as GridSearchRow[];
   return rows.map((r) => ({
     id: r.id, ts: r.ts, keyword: r.keyword, target: r.target, center: r.center,
     grid_size: r.grid_size, spacing_km: r.spacing_km, language: r.language, cost: r.cost ?? undefined,
     status: (r.status ?? 'done') as GridStatus,
     queue_mode: (r.queue_mode ?? 'live') as GridQueueMode,
     depth: r.depth ?? 20,
+    schedule_id: r.schedule_id ?? undefined,
     summary: r.status === 'pending' ? undefined : summarizeGridResults(r.results),
   }));
 }
 
 export function getGridEntry(id: string): (GridSearchEntry & { task_ids?: GridTaskPoint[] }) | null {
   const row = getDb()
-    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, task_ids FROM grid_searches WHERE id = ?')
-    .get(id) as { id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; depth: number | null; task_ids: string | null } | undefined;
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, schedule_id, task_ids FROM grid_searches WHERE id = ?')
+    .get(id) as { id: string; ts: number; keyword: string; target: string; center: string; grid_size: number; spacing_km: number; language: string; cost: number | null; status: string; queue_mode: string; depth: number | null; schedule_id: number | null; task_ids: string | null } | undefined;
   if (!row) return null;
   return {
     id: row.id, ts: row.ts, keyword: row.keyword, target: row.target, center: row.center,
@@ -1363,20 +1402,21 @@ export function getGridEntry(id: string): (GridSearchEntry & { task_ids?: GridTa
     status: (row.status ?? 'done') as GridStatus,
     queue_mode: (row.queue_mode ?? 'live') as GridQueueMode,
     depth: row.depth ?? 20,
+    schedule_id: row.schedule_id ?? undefined,
     task_ids: row.task_ids ? JSON.parse(row.task_ids) as GridTaskPoint[] : undefined,
   };
 }
 
 export function saveGridSearch(entry: GridSearchEntry, results: GridPoint[]): void {
   getDb()
-    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, JSON.stringify(results), entry.status, entry.queue_mode, entry.depth);
+    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, depth, schedule_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, JSON.stringify(results), entry.status, entry.queue_mode, entry.depth, entry.schedule_id ?? null);
 }
 
 export function saveGridSearchPending(entry: GridSearchEntry, taskPoints: GridTaskPoint[]): void {
   getDb()
-    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, depth, task_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, '[]', 'pending', entry.queue_mode, entry.depth, JSON.stringify(taskPoints));
+    .prepare('INSERT OR REPLACE INTO grid_searches (id, ts, keyword, target, center, grid_size, spacing_km, language, cost, results, status, queue_mode, depth, task_ids, schedule_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(entry.id, entry.ts, entry.keyword, entry.target, entry.center, entry.grid_size, entry.spacing_km, entry.language, entry.cost ?? null, '[]', 'pending', entry.queue_mode, entry.depth, JSON.stringify(taskPoints), entry.schedule_id ?? null);
 }
 
 export function getGridProgress(id: string): { results: GridPoint[]; pendingTasks: GridTaskPoint[] } | null {
@@ -1412,6 +1452,217 @@ export function getGridResults(id: string): GridPoint[] | null {
     const parsed = JSON.parse(row.results) as GridPoint[];
     return parsed.length > 0 ? parsed : null;
   } catch { return null; }
+}
+
+/** Every saved scan, newest first, with its summary stats (for the All Scans page; no point data). */
+export function getAllGridScans(): GridSearchEntry[] {
+  const rows = getDb()
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, schedule_id, results FROM grid_searches ORDER BY ts DESC')
+    .all() as GridSearchRow[];
+  return rows.map((r) => ({
+    id: r.id, ts: r.ts, keyword: r.keyword, target: r.target, center: r.center,
+    grid_size: r.grid_size, spacing_km: r.spacing_km, language: r.language, cost: r.cost ?? undefined,
+    status: (r.status ?? 'done') as GridStatus,
+    queue_mode: (r.queue_mode ?? 'live') as GridQueueMode,
+    depth: r.depth ?? 20,
+    schedule_id: r.schedule_id ?? undefined,
+    summary: r.status === 'pending' ? undefined : summarizeGridResults(r.results),
+  }));
+}
+
+/** Every scan still waiting on queued DataForSEO tasks, oldest first. */
+export function getPendingGridSearches(): Array<{ id: string; ts: number }> {
+  return getDb()
+    .prepare(`SELECT id, ts FROM grid_searches WHERE status = 'pending' ORDER BY ts ASC`)
+    .all() as Array<{ id: string; ts: number }>;
+}
+
+/** Gives up on a queued scan that never finished: keeps whatever points did arrive and stops polling. */
+export function markGridSearchTimedOut(id: string): void {
+  getDb()
+    .prepare(`UPDATE grid_searches SET status = 'error', task_ids = NULL WHERE id = ? AND status = 'pending'`)
+    .run(id);
+}
+
+/** Scans an automation schedule has produced, newest first (summary only, no point data). */
+export function getGridSearchesBySchedule(scheduleId: number, limit = 30): GridSearchEntry[] {
+  const rows = getDb()
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, schedule_id, results FROM grid_searches WHERE schedule_id = ? ORDER BY ts DESC LIMIT ?')
+    .all(scheduleId, limit) as GridSearchRow[];
+  return rows.map((r) => ({
+    id: r.id, ts: r.ts, keyword: r.keyword, target: r.target, center: r.center,
+    grid_size: r.grid_size, spacing_km: r.spacing_km, language: r.language, cost: r.cost ?? undefined,
+    status: (r.status ?? 'done') as GridStatus,
+    queue_mode: (r.queue_mode ?? 'live') as GridQueueMode,
+    depth: r.depth ?? 20,
+    schedule_id: r.schedule_id ?? undefined,
+    summary: r.status === 'pending' ? undefined : summarizeGridResults(r.results),
+  }));
+}
+
+// --- Grid Schedules (automation) ---
+
+export type GridScheduleFrequency = 'daily' | 'weekly' | 'monthly';
+/** starting = claimed, scan not created yet · running = queued scan in progress · success/failed = finished. */
+export type GridScheduleStatus = 'starting' | 'running' | 'success' | 'failed';
+
+export interface GridSchedule {
+  id: number;
+  label: string;
+  keyword: string;
+  target: string;
+  center: string;
+  grid_size: number;
+  spacing_km: number;
+  language: string;
+  queue_mode: GridQueueMode;
+  depth: number;
+  frequency: GridScheduleFrequency;
+  /** 0 = Sunday … 6 = Saturday; weekly schedules only. */
+  day_of_week: number | null;
+  /** 1-28; monthly schedules only (capped at 28 so every month has that day). */
+  day_of_month: number | null;
+  /** "HH:MM", 24h, in the automation timezone. */
+  time_of_day: string;
+  enabled: boolean;
+  next_run_at: number | null;
+  last_run_at: number | null;
+  last_scan_id: string | null;
+  last_status: GridScheduleStatus | null;
+  last_error: string | null;
+  created_at: number;
+}
+
+export type GridScheduleTiming = Pick<GridSchedule,
+  'label' | 'queue_mode' | 'depth' | 'frequency' | 'day_of_week' | 'day_of_month' | 'time_of_day'>;
+
+export type GridScheduleInput = GridScheduleTiming &
+  Pick<GridSchedule, 'keyword' | 'target' | 'center' | 'grid_size' | 'spacing_km' | 'language'>;
+
+type GridScheduleRow = Omit<GridSchedule, 'enabled'> & { enabled: number };
+
+function toGridSchedule(r: GridScheduleRow): GridSchedule {
+  return { ...r, enabled: r.enabled === 1 };
+}
+
+export function getGridSchedules(): GridSchedule[] {
+  return (getDb()
+    .prepare('SELECT * FROM grid_schedules ORDER BY label COLLATE NOCASE, keyword COLLATE NOCASE')
+    .all() as GridScheduleRow[]).map(toGridSchedule);
+}
+
+export function getGridSchedule(id: number): GridSchedule | null {
+  const row = getDb().prepare('SELECT * FROM grid_schedules WHERE id = ?').get(id) as GridScheduleRow | undefined;
+  return row ? toGridSchedule(row) : null;
+}
+
+export function createGridSchedule(input: GridScheduleInput, nextRunAt: number): number {
+  const result = getDb()
+    .prepare(`INSERT INTO grid_schedules (label, keyword, target, center, grid_size, spacing_km, language, queue_mode, depth,
+      frequency, day_of_week, day_of_month, time_of_day, enabled, next_run_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+    .run(input.label, input.keyword, input.target, input.center, input.grid_size, input.spacing_km, input.language,
+      input.queue_mode, input.depth, input.frequency, input.day_of_week, input.day_of_month, input.time_of_day,
+      nextRunAt, Date.now());
+  return Number(result.lastInsertRowid);
+}
+
+/** Edits a schedule's name, timing and scan mode. Keyword, target and location stay as created. */
+export function updateGridSchedule(id: number, input: GridScheduleTiming, nextRunAt: number | null): void {
+  getDb()
+    .prepare(`UPDATE grid_schedules SET label = ?, queue_mode = ?, depth = ?, frequency = ?, day_of_week = ?,
+      day_of_month = ?, time_of_day = ?, next_run_at = ? WHERE id = ?`)
+    .run(input.label, input.queue_mode, input.depth, input.frequency, input.day_of_week, input.day_of_month,
+      input.time_of_day, nextRunAt, id);
+}
+
+/** Pausing clears next_run_at; resuming sets a fresh one, so slots missed while paused never fire. */
+export function setGridScheduleEnabled(id: number, enabled: boolean, nextRunAt: number | null): void {
+  getDb()
+    .prepare('UPDATE grid_schedules SET enabled = ?, next_run_at = ? WHERE id = ?')
+    .run(enabled ? 1 : 0, enabled ? nextRunAt : null, id);
+}
+
+/** Removes the schedule only; scans it already produced stay in history. */
+export function deleteGridSchedule(id: number): void {
+  getDb().prepare('DELETE FROM grid_schedules WHERE id = ?').run(id);
+}
+
+export function getDueGridSchedules(now: number): GridSchedule[] {
+  return (getDb()
+    .prepare('SELECT * FROM grid_schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC')
+    .all(now) as GridScheduleRow[]).map(toGridSchedule);
+}
+
+/**
+ * Atomically takes ownership of one due run. It only succeeds if next_run_at still holds the value
+ * this caller read, so two schedulers (or two ticks) can never both start the same slot. The next
+ * slot is written in the same statement, before any scan starts, so a crash mid-run skips that run
+ * rather than repeating it.
+ */
+export function claimGridScheduleRun(id: number, expectedNextRunAt: number, newNextRunAt: number, now: number): boolean {
+  const result = getDb()
+    .prepare(`UPDATE grid_schedules SET next_run_at = ?, last_run_at = ?, last_status = 'starting', last_scan_id = NULL, last_error = NULL
+      WHERE id = ? AND enabled = 1 AND next_run_at = ?`)
+    .run(newNextRunAt, now, id, expectedNextRunAt);
+  return result.changes === 1;
+}
+
+export function setGridScheduleRunResult(id: number, status: GridScheduleStatus, scanId: string | null, error: string | null): void {
+  getDb()
+    .prepare('UPDATE grid_schedules SET last_status = ?, last_scan_id = COALESCE(?, last_scan_id), last_error = ? WHERE id = ?')
+    .run(status, scanId, error, id);
+}
+
+/**
+ * True when a finished scan holds no listings at any point. That means DataForSEO failed every
+ * request (a real area always returns some businesses), not that the target ranks nowhere.
+ */
+export function gridScanReturnedNothing(scanId: string): boolean {
+  const row = getDb().prepare('SELECT results FROM grid_searches WHERE id = ?').get(scanId) as { results: string } | undefined;
+  if (!row) return false;
+  try {
+    const points = JSON.parse(row.results) as GridPoint[];
+    return points.length > 0 && points.every((p) => !p.items || p.items.length === 0);
+  } catch { return false; }
+}
+
+/** Finishes "running" schedules whose queued scan has since completed or timed out. */
+export function syncRunningGridSchedules(): void {
+  const running = getDb()
+    .prepare(`SELECT s.id, s.last_scan_id, g.status FROM grid_schedules s LEFT JOIN grid_searches g ON g.id = s.last_scan_id WHERE s.last_status = 'running'`)
+    .all() as Array<{ id: number; last_scan_id: string | null; status: string | null }>;
+  for (const r of running) {
+    if (r.status === 'pending') continue;
+    if (r.status === 'done' && r.last_scan_id && !gridScanReturnedNothing(r.last_scan_id)) {
+      setGridScheduleRunResult(r.id, 'success', null, null);
+    } else {
+      setGridScheduleRunResult(r.id, 'failed', null,
+        r.status === 'done' ? 'DataForSEO returned no results at any point (check the account balance)'
+          : r.status === 'error' ? 'Timed out: DataForSEO never returned every point'
+            : 'Scan record missing');
+    }
+  }
+}
+
+/** Manual (non-automated) scans, newest first: the ones a new schedule can be created from. */
+export function getRecentManualGridScans(limit = 200): GridSearchEntry[] {
+  return (getDb()
+    .prepare('SELECT id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, schedule_id, NULL AS results FROM grid_searches WHERE schedule_id IS NULL ORDER BY ts DESC LIMIT ?')
+    .all(limit) as GridSearchRow[]).map((r) => ({
+    id: r.id, ts: r.ts, keyword: r.keyword, target: r.target, center: r.center,
+    grid_size: r.grid_size, spacing_km: r.spacing_km, language: r.language, cost: r.cost ?? undefined,
+    status: (r.status ?? 'done') as GridStatus,
+    queue_mode: (r.queue_mode ?? 'live') as GridQueueMode,
+    depth: r.depth ?? 20,
+  }));
+}
+
+/** A run left in "starting" means the server stopped before its scan was created (e.g. a redeploy). */
+export function failInterruptedGridSchedules(): void {
+  getDb()
+    .prepare(`UPDATE grid_schedules SET last_status = 'failed', last_error = 'Interrupted by a server restart; runs again at the next scheduled time' WHERE last_status = 'starting'`)
+    .run();
 }
 
 // --- Instant Pages ---

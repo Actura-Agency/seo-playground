@@ -172,6 +172,8 @@ export async function postGridTasksQueue(
   const CHUNK = 100;
   const allTaskPoints: GridTaskPoint[] = [];
   let totalCost = 0;
+  let created = 0;
+  let firstRejection: string | undefined;
 
   for (let i = 0; i < coords.length; i += CHUNK) {
     const chunk = coords.slice(i, i + CHUNK);
@@ -189,7 +191,7 @@ export async function postGridTasksQueue(
     });
     if (!res.ok) return { taskPoints: [], cost: 0, error: `API error ${res.status}` };
     const data = await res.json() as {
-      tasks?: Array<{ id?: string; status_code?: number; cost?: number }>;
+      tasks?: Array<{ id?: string; status_code?: number; status_message?: string; cost?: number }>;
     };
     if (!data.tasks) return { taskPoints: [], cost: 0, error: 'Empty response from DataForSEO.' };
     data.tasks.forEach((task, j) => {
@@ -197,10 +199,17 @@ export async function postGridTasksQueue(
       if (task.id) {
         allTaskPoints.push({ task_id: task.id, row: coord.row, col: coord.col, lat: coord.lat, lng: coord.lng });
       }
+      // 20100 = "Task Created". If no task at all was created (e.g. out of balance), report it
+      // instead of saving a scan that would finish as a grid of empty "Not found" points.
+      if (task.status_code === 20100) created++;
+      else firstRejection ??= task.status_message ?? `status ${task.status_code}`;
       totalCost += task.cost ?? 0;
     });
   }
 
+  if (created === 0) {
+    return { taskPoints: [], cost: totalCost, error: `DataForSEO rejected the scan: ${firstRejection ?? 'no tasks created'}` };
+  }
   return { taskPoints: allTaskPoints, cost: totalCost };
 }
 

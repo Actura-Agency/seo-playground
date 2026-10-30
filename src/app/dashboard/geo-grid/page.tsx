@@ -1,13 +1,16 @@
 import { redirect } from 'next/navigation';
 import {
-  getCredentials, getSetting, getGridHistory, getGridEntry, saveGridSearch,
-  saveGridSearchPending, getGridResults, type GridSearchEntry, type GridPoint, type GridQueueMode,
+  getCredentials, getSetting, getGridHistory, getGridEntry, getGridResults, getGridSchedule,
+  type GridSearchEntry, type GridPoint, type GridQueueMode,
 } from '@/lib/db';
 import LocalFinderForm from '../local-finder/LocalFinderForm';
 import GridResults from '../local-finder/GridResults';
 import GridPending from '../local-finder/GridPending';
 import HistorySidebar from '@/components/HistorySidebar';
-import { fetchGridSearch, postGridTasksQueue, stableGridId, type GridDepth } from '../local-finder/grid-api';
+import { stableGridId, type GridDepth } from '../local-finder/grid-api';
+import { startGridScan } from '../local-finder/grid-scan';
+import { AUTOMATION_TZ } from '../local-finder/grid-schedule';
+import { gridRerunUrl } from '../local-finder/grid-links';
 
 interface SearchParams {
   keyword?: string;
@@ -21,26 +24,12 @@ interface SearchParams {
   depth?: string;
 }
 
+// Shown in the team's timezone (the same one automation schedules use), not the server's UTC clock.
 function formatDate(ts: number) {
   return new Date(ts).toLocaleString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: AUTOMATION_TZ,
   });
-}
-
-function gridRerunUrl(entry: { keyword: string; center: string; grid_size: number; spacing_km: number; target: string; language: string; queue_mode: string; depth: number }, basePath = '/dashboard/geo-grid') {
-  const p = new URLSearchParams({
-    keyword: entry.keyword,
-    location_coordinate: entry.center,
-    grid_size: String(entry.grid_size),
-    spacing_km: String(entry.spacing_km),
-    grid_target: entry.target,
-    language: entry.language,
-    queue_mode: entry.queue_mode,
-    depth: String(entry.depth),
-    mode: 'grid',
-  });
-  return `${basePath}?${p.toString()}`;
 }
 
 export default async function GeoGridPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -67,6 +56,9 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     } else {
       gridResults = getGridResults(gridHistoryId);
       gridEntry = entry;
+      if (!gridResults && entry.status === 'error') {
+        gridError = 'This scan timed out before DataForSEO returned any points.';
+      }
     }
   }
 
@@ -86,42 +78,17 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
       );
 
       if (!getGridEntry(id)) {
-        const baseEntry: GridSearchEntry = {
-          id, ts: Date.now(),
+        const result = await startGridScan(id, {
           keyword: params.keyword,
-          target: params.grid_target,
           center: params.location_coordinate,
-          grid_size: gridSize,
-          spacing_km: spacingKm,
+          gridSize,
+          spacingKm,
+          target: params.grid_target,
           language: params.language ?? defaultLanguage,
-          status: 'done',
-          queue_mode: queueMode,
+          queueMode,
           depth,
-        };
-
-        if (queueMode === 'live') {
-          const result = await fetchGridSearch(
-            params.keyword, params.location_coordinate,
-            gridSize, spacingKm, params.language ?? defaultLanguage,
-            params.grid_target, creds.login, creds.pass, depth,
-          );
-          if (result.error) {
-            gridError = result.error;
-          } else {
-            saveGridSearch({ ...baseEntry, cost: result.cost }, result.results);
-          }
-        } else {
-          const result = await postGridTasksQueue(
-            params.keyword, params.location_coordinate,
-            gridSize, spacingKm, params.language ?? defaultLanguage,
-            creds.login, creds.pass, queueMode, depth,
-          );
-          if (result.error) {
-            gridError = result.error;
-          } else {
-            saveGridSearchPending({ ...baseEntry, status: 'pending', cost: result.cost }, result.taskPoints);
-          }
-        }
+        });
+        if (result.error) gridError = result.error;
       }
 
       // Redirect to a stable history-id URL so every subsequent poll / router.refresh() looks up
@@ -135,6 +102,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
   }
 
   const gridHistory = getGridHistory();
+  const scheduleLabel = gridEntry?.schedule_id !== undefined ? getGridSchedule(gridEntry.schedule_id)?.label : undefined;
 
   const formDefaults = {
     keyword: (params.keyword ?? gridEntry?.keyword ?? '').toString(),
@@ -170,6 +138,9 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
             {isPending && (
               <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">Pending</span>
             )}
+            {entry.schedule_id !== undefined && (
+              <span className="text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 px-1.5 py-0.5 rounded shrink-0" title="Started by an automation schedule">Auto</span>
+            )}
           </div>
           <p className="text-[11px] text-slate-400 mt-0.5 truncate">
             Target: {entry.target} · {(entry.spacing_km / 1.609344).toFixed(2)} mi
@@ -189,13 +160,22 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
         </a>
         <div className="flex items-center justify-between gap-3 mt-1.5">
           <span className="text-[11px] text-slate-400">{formatDate(entry.ts)}</span>
-          <a
-            href={gridRerunUrl(entry)}
-            className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-800 transition-colors"
-            title="Run this search again"
-          >
-            Re-run ↻
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href={`/dashboard/geo-grid/automation?from=${entry.id}`}
+              className="text-[10px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-700 transition-colors"
+              title="Run this search automatically on a schedule"
+            >
+              Schedule
+            </a>
+            <a
+              href={gridRerunUrl(entry)}
+              className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-800 transition-colors"
+              title="Run this search again"
+            >
+              Re-run ↻
+            </a>
+          </div>
         </div>
       </div>
     );
@@ -226,6 +206,14 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
                 gridSize={gridEntry.grid_size}
                 startedAt={gridEntry.ts}
               />
+            )}
+            {gridResults && gridEntry && (
+              <p className="text-[11px] text-slate-400 mb-2">
+                Scanned {formatDate(gridEntry.ts)} PT
+                {gridEntry.schedule_id !== undefined && (
+                  <> · Automated{scheduleLabel ? ` (${scheduleLabel})` : ''}</>
+                )}
+              </p>
             )}
             {gridResults && gridEntry && (
               <GridResults
