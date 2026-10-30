@@ -2,7 +2,7 @@ import {
   getCredentials, getGridEntry, getGridProgress, updateGridProgress, saveGridSearch, saveGridSearchPending,
   type GridPoint, type GridLocalItem, type GridTaskPoint, type GridSearchEntry, type GridQueueMode, type GridStatus,
 } from '@/lib/db';
-import { fetchGridSearch, postGridTasksQueue, mapWithConcurrency, type GridDepth } from './grid-api';
+import { fetchGridSearch, postGridTasksQueue, type GridDepth } from './grid-api';
 
 export interface GridScanSettings {
   keyword: string;
@@ -57,8 +57,7 @@ export async function startGridScan(
   return { status: 'pending' };
 }
 
-export interface DFSTaskGetResponse {
-  status_code?: number;
+interface DFSTaskGetResponse {
   tasks?: Array<{
     id?: string;
     status_code?: number;
@@ -91,27 +90,6 @@ function excludeSponsored<T extends { type: string; is_paid?: boolean; rank_grou
     .filter((i) => i.type === 'local_pack' && !i.is_paid)
     .sort((a, b) => a.rank_group - b.rank_group)
     .map((item, idx) => ({ ...item, rank_group: idx + 1 }));
-}
-
-// DataForSEO task status codes that mean "not finished yet": 40601/40602 = still queued/processing.
-const STILL_PROCESSING = new Set([40601, 40602]);
-// Codes that mean the *check itself* was refused or failed (too many simultaneous requests, rate
-// limit, DataForSEO internal error), not that the task failed. Retried on the next check, never
-// turned into an empty "Not found" point.
-const RETRY_LATER = new Set([40202, 40209, 50000, 50301]);
-/** DataForSEO allows 30 simultaneous requests per account; stay well under it, leaving room for other tabs and tools. */
-const CHECK_CONCURRENCY = 8;
-
-/**
- * Reads one task_get response: 'ready' (finished, successfully or permanently failed), or
- * 'pending' (still in the queue, or the check should simply be retried).
- */
-export function classifyTaskGet(data: DFSTaskGetResponse | null): 'ready' | 'pending' {
-  // A refused or failed request (top-level code other than 20000) says nothing about the task itself.
-  if (!data || (data.status_code !== undefined && data.status_code !== 20000)) return 'pending';
-  const code = data.tasks?.[0]?.status_code;
-  if (code === undefined || STILL_PROCESSING.has(code) || RETRY_LATER.has(code)) return 'pending';
-  return 'ready';
 }
 
 export type CollectResult =
@@ -152,13 +130,14 @@ export async function collectGridResults(id: string): Promise<CollectResult> {
     const auth = btoa(`${creds.login}:${creds.pass}`);
     const targetLower = entry.target.toLowerCase();
 
-    // Only re-check tasks that aren't already collected — once a task's been read here it's never
-    // queried again. Checks run a few at a time: firing all 121 at once went over DataForSEO's
-    // simultaneous-request limit, and the refused checks (always the last-posted points, at the end
-    // of the list) made the final ~20 points of an 11x11 look slow.
-    const checks = await mapWithConcurrency(
-      progress.pendingTasks, CHECK_CONCURRENCY,
-      async (tp: GridTaskPoint) => {
+    // DataForSEO status codes that mean "task is still in the queue / being processed".
+    // Any other non-20000 code is a permanent failure → treat as done with empty results
+    // so the grid never gets stuck in an infinite pending loop.
+    const STILL_PROCESSING = new Set([40602, 40601]);
+
+    // Only re-check tasks that aren't already collected — once a task's been read here it's never queried again.
+    const checks = await Promise.all(
+      progress.pendingTasks.map(async (tp: GridTaskPoint) => {
         try {
           const res = await fetch(
             `https://api.dataforseo.com/v3/serp/google/local_finder/task_get/advanced/${tp.task_id}`,
@@ -166,10 +145,11 @@ export async function collectGridResults(id: string): Promise<CollectResult> {
           );
           if (!res.ok) return { tp, ready: false, items: [] };
           const data = await res.json() as DFSTaskGetResponse;
-          if (classifyTaskGet(data) === 'pending') return { tp, ready: false, items: [] };
-          // Success, or a permanent task failure → mark as done (empty items for failures). Sponsored/paid
+          const task = data.tasks?.[0];
+          // Still in queue → not ready yet
+          if (!task || STILL_PROCESSING.has(task.status_code ?? 0)) return { tp, ready: false, items: [] };
+          // Success or permanent error → mark as done (empty items for errors). Sponsored/paid
           // local-pack entries are excluded from ranking entirely — see excludeSponsored().
-          const task = data.tasks![0];
           const rawItems = task.status_code === 20000
             ? excludeSponsored(task.result?.[0]?.items ?? [])
             : [];
@@ -178,9 +158,8 @@ export async function collectGridResults(id: string): Promise<CollectResult> {
           // Network timeout or fetch error → not ready, will retry next poll
           return { tp, ready: false, items: [] };
         }
-      },
+      }),
     );
-    const arrivedAt = Date.now();
 
     const isTarget = (title: string, domain: string, url: string) =>
       title.toLowerCase().includes(targetLower) ||
@@ -211,7 +190,7 @@ export async function collectGridResults(id: string): Promise<CollectResult> {
       }));
       newlyReady.push({
         row: check.tp.row, col: check.tp.col, lat: check.tp.lat, lng: check.tp.lng,
-        rank: match ? match.rank_group : null, items: gridItems, arrived_at: arrivedAt,
+        rank: match ? match.rank_group : null, items: gridItems,
       });
     }
 
