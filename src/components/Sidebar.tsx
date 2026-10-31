@@ -9,7 +9,7 @@ import {
   Gauge, Lightbulb, BrainCircuit, MessageSquare, Star, Flame, Cpu, ShieldCheck, Grid3X3,
   Sparkles, Target, Layers, Network, LineChart, Tag, ScanText,
   History, Copy, BarChart3, BookOpen, Server, Bot, Radar, Eye, Waypoints, Megaphone,
-  ChevronDown, CalendarClock, ListFilter,
+  ChevronDown, CalendarClock, ListFilter, Menu, X,
 } from 'lucide-react';
 
 const sections = [
@@ -115,7 +115,67 @@ function isItemActive(pathname: string, item: { href: string; exact?: boolean })
 
 const COLLAPSE_STORAGE_KEY = 'sidebar-collapsed-sections';
 
+/** Desktop: the menu as a fixed column on the left. Hidden on phones, where MobileSidebar takes over. */
 export default function Sidebar() {
+  return (
+    <div className="hidden md:flex h-full w-60 shrink-0">
+      <SidebarPanel />
+    </div>
+  );
+}
+
+/** Phones and small tablets: a ☰ button (in the top bar) that slides the same menu in from the left. */
+export function MobileSidebar() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // Close after navigating, and on Escape.
+  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  return (
+    <div className="md:hidden flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Open menu"
+        className="-ml-1 p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+      <Link href="/dashboard" className="flex items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size local logo asset, next/image is unnecessary here */}
+        <img src="/actura-icon.svg" alt="" className="w-6 h-6 rounded-md shrink-0" />
+        {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size local logo asset, next/image is unnecessary here */}
+        <img src="/actura-wordmark.png" alt="Actura" className="h-4 w-auto" />
+      </Link>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="absolute inset-0 bg-slate-900/40" onClick={() => setOpen(false)} />
+          <div className="relative h-full w-72 max-w-[85vw] shadow-xl">
+            <SidebarPanel onNavigate={() => setOpen(false)} />
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close menu"
+              className="absolute top-3.5 right-3 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarPanel({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   // Starts with nothing collapsed (matches server-rendered HTML) — the real default (only the
   // active section open, or whatever the user last chose) is applied client-side right after
@@ -151,7 +211,7 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-60 flex-col border-r border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 select-none overflow-y-auto shrink-0 scrollbar-thin">
+    <div className="flex h-full w-full flex-col border-r border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 select-none overflow-y-auto scrollbar-thin">
       {/* Logo */}
       <div className="flex h-14 items-center px-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2.5">
@@ -185,6 +245,7 @@ export default function Sidebar() {
                       <Link
                         key={item.name}
                         href={item.href}
+                        onClick={onNavigate}
                         className={`group flex items-center px-3 py-2 text-sm rounded-lg transition-all duration-150 ${
                           isActive
                             ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-semibold'
