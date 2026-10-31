@@ -189,7 +189,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
-        <div className="flex-1 min-w-0 space-y-6">
+        <div className="flex-1 min-w-0 w-full lg:w-auto space-y-6">
           <LocalFinderForm defaults={formDefaults} />
 
           <div id="results">

@@ -169,8 +169,8 @@ export default function ScansTable({ rows }: { rows: ScanRow[] }) {
           <p className="px-5 py-6 text-sm text-slate-400">{rows.length === 0 ? 'No scans yet.' : 'No scans match these filters.'}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
+            <table className="w-full text-sm max-sm:block">
+              <thead className="max-sm:hidden">
                 <tr className="text-left text-[10px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800">
                   <Header k="ts" label="Date" className="pl-5" />
                   <Header k="target" label="Company" />
@@ -181,25 +181,25 @@ export default function ScansTable({ rows }: { rows: ScanRow[] }) {
                   <th className="px-5 py-2.5" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-800 max-sm:block">
                 {visible.map((r) => {
                   const href = `/dashboard/geo-grid?grid_history_id=${r.id}#results`;
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                      <td className="pl-5 pr-3 py-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400 text-[12px]">
+                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors max-sm:block max-sm:px-5 max-sm:py-3">
+                      <td className="pl-5 pr-3 py-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400 text-[12px] max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
                         <a href={href} className="hover:text-blue-600">{formatDate(r.ts)}</a>
                       </td>
-                      <td className="px-3 py-2.5 min-w-[160px]">
+                      <td className="px-3 py-2.5 min-w-[160px] max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
                         <a href={href} className="font-bold text-slate-800 dark:text-slate-200 hover:text-blue-600">{r.target}</a>
                         {r.auto && (
                           <span className="ml-1.5 text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 px-1.5 py-0.5 rounded" title={r.scheduleName ? `Schedule: ${r.scheduleName}` : 'Started by an automation schedule'}>Auto</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 min-w-[140px]">{r.keyword}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-[12px] text-slate-500 dark:text-slate-400">
+                      <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 min-w-[140px] max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">{r.keyword}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-[12px] text-slate-500 dark:text-slate-400 max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
                         {r.gridSize}×{r.gridSize} · {r.spacingMi.toFixed(2)} mi
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
                         {r.pending ? (
                           <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Pending</span>
                         ) : r.timedOut ? (
@@ -213,11 +213,11 @@ export default function ScansTable({ rows }: { rows: ScanRow[] }) {
                           </div>
                         ) : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-[12px] text-slate-500 dark:text-slate-400 tabular-nums">
+                      <td className="px-3 py-2.5 whitespace-nowrap text-[12px] text-slate-500 dark:text-slate-400 tabular-nums max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
                         {r.timedOut ? `${r.points ?? 0} of ${r.gridSize * r.gridSize} points arrived`
                           : r.found !== null && r.points !== null ? `${r.found}/${r.points}${r.avgRank !== null ? ` · avg #${r.avgRank}` : ''}` : '—'}
                       </td>
-                      <td className="px-5 py-2.5 whitespace-nowrap text-right">
+                      <td className="px-5 py-2.5 whitespace-nowrap text-right max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left max-sm:pt-1.5">
                         <a href={`/dashboard/geo-grid/automation?from=${r.id}`} className="text-[10px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-700 transition-colors mr-3">Schedule</a>
                         <a href={r.rerunUrl} className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-800 transition-colors">Re-run ↻</a>
                       </td>

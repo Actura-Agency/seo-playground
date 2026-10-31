@@ -224,11 +224,26 @@ function GridMarker({ point, isCenter, cellPx, fontSize, target, highlightKey }:
   );
 }
 
+/** True below Tailwind's `sm` breakpoint (640px). */
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return narrow;
+}
+
 export default function GridMap({ points, gridSize, target, highlightKey, highlightName, highlightLocation, locatingBusiness }: Props) {
   const half = Math.floor(gridSize / 2);
   const geoPoints = useMemo(() => points.filter((p) => p.lat != null && p.lng != null), [points]);
-  const cellPx = gridSize <= 3 ? 52 : gridSize <= 5 ? 44 : gridSize <= 7 ? 38 : 32;
-  const fontSize = gridSize <= 5 ? 15 : 13;
+  // Phones: smaller pins for big grids so neighbors don't overlap on a narrow map.
+  const narrow = useIsNarrow();
+  const cellPx = gridSize <= 3 ? 52 : gridSize <= 5 ? 44 : gridSize <= 7 ? 38 : narrow ? (gridSize >= 11 ? 22 : 26) : 32;
+  const fontSize = gridSize <= 5 ? 15 : narrow && gridSize > 7 ? 10 : 13;
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   const boundsPoints = useMemo(
@@ -239,8 +254,7 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
   if (geoPoints.length === 0 || !apiKey) {
     return (
       <div
-        className="w-full rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center"
-        style={{ height: 520 }}
+        className="w-full h-[420px] sm:h-[520px] rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center"
       >
         <p className="text-sm text-slate-400">
           {apiKey ? 'No results with coordinates.' : 'Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.'}
@@ -263,8 +277,7 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
         </div>
       )}
       <div
-        className="w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800"
-        style={{ height: 520 }}
+        className="w-full h-[420px] sm:h-[520px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800"
       >
         <APIProvider apiKey={apiKey}>
           <Map

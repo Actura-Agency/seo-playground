@@ -184,8 +184,8 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
           <p className="px-5 py-6 text-sm text-slate-400">No schedules yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
+            <table className="w-full text-sm max-sm:block">
+              <thead className="max-sm:hidden">
                 <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800">
                   <th className="px-5 py-2.5">Client · keyword</th>
                   <th className="px-3 py-2.5">Frequency</th>
@@ -195,12 +195,12 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
                   <th className="px-5 py-2.5" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-800 max-sm:block">
                 {schedules.map((s) => {
                   const runs = getGridSearchesBySchedule(s.id, 10);
                   return (
-                    <tr key={s.id} className="align-top">
-                      <td className="px-5 py-3 min-w-[220px]">
+                    <tr key={s.id} className="align-top max-sm:block max-sm:px-5 max-sm:py-3">
+                      <td className="px-5 py-3 min-w-[220px] max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
                         <p className="font-bold text-slate-800 dark:text-slate-200">{s.label}</p>
                         <p className="text-[13px] text-slate-600 dark:text-slate-300">&ldquo;{s.keyword}&rdquo;</p>
                         <p className="text-[11px] text-slate-400">
@@ -226,10 +226,11 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
                           </details>
                         )}
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300">{describeSchedule(s)}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">
+                      <td className="px-3 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300 max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left"><span className="sm:hidden text-[10px] font-black uppercase tracking-widest text-slate-400 mr-1.5">Runs</span>{describeSchedule(s)}</td>
+                      <td className="px-3 py-3 whitespace-nowrap max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
+                        <span className="sm:hidden text-[10px] font-black uppercase tracking-widest text-slate-400 mr-1.5">Last scan</span>
                         {s.last_run_at ? (
-                          <div className="space-y-1">
+                          <div className="space-y-1 max-sm:inline-block max-sm:align-top">
                             {s.last_scan_id ? (
                               <a href={`/dashboard/geo-grid?grid_history_id=${s.last_scan_id}#results`} className="block text-slate-600 dark:text-slate-300 hover:text-blue-600">
                                 {formatScheduleDate(s.last_run_at)}
@@ -246,10 +247,11 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
                           <StatusBadge s={s} />
                         )}
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                      <td className="px-3 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300 max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left">
+                        <span className="sm:hidden text-[10px] font-black uppercase tracking-widest text-slate-400 mr-1.5">Next scan</span>
                         {s.enabled && s.next_run_at ? formatScheduleDate(s.next_run_at) : <span className="text-slate-400">—</span>}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left max-sm:pt-2">
                         <form action={toggleScheduleAction}>
                           <input type="hidden" name="schedule_id" value={s.id} />
                           <PendingButton
@@ -265,8 +267,8 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
                           </PendingButton>
                         </form>
                       </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center justify-end gap-3">
+                      <td className="px-5 py-3 max-sm:block max-sm:px-0 max-sm:py-0.5 max-sm:min-w-0 max-sm:text-left max-sm:pt-2">
+                        <div className="flex items-center justify-end max-sm:justify-start gap-3">
                           <a
                             href={`/dashboard/geo-grid/automation?edit=${s.id}`}
                             className="text-[10px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-700 transition-colors"
