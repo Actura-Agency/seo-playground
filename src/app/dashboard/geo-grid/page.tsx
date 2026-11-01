@@ -69,7 +69,8 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     } else {
       const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '11', 10), 3), 13);
       const spacingKm = parseFloat(params.spacing_km ?? '1');
-      const depth: GridDepth = params.depth === '10' ? 10 : 20;
+      // Top 10 unless asked otherwise: it's half the price and DataForSEO still returns 20 results.
+      const depth: GridDepth = params.depth === '20' ? 20 : 10;
 
       const id = stableGridId(
         params.keyword, params.location_coordinate, gridSize, spacingKm, params.grid_target, 'standard', depth,
@@ -109,8 +110,8 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     language: (params.language ?? gridEntry?.language ?? defaultLanguage).toString(),
     device: 'desktop',
     os: 'windows',
-    // Top 10 by default (half the cost); viewing a past scan shows the depth it actually used.
-    depth: (params.depth ?? gridEntry?.depth ?? '10').toString(),
+    // Always Top 10 by default (half the cost, still 20 results back), even when viewing a Top 20 scan.
+    depth: (params.depth ?? '10').toString(),
     minRating: '',
     timeFilter: '',
     gridMode: true,
