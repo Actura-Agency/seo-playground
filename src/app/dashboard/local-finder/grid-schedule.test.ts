@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeNextRun, describeSchedule, zonedTimeToUtc } from './grid-schedule';
+import { computeNextRun, describeSchedule, zonedTimeToUtc, zonedDayKey, zonedDayRange, formatDayKey } from './grid-schedule';
 
 const TZ = 'America/Los_Angeles';
 const utc = (iso: string) => Date.parse(iso);
@@ -72,5 +72,26 @@ describe('describeSchedule', () => {
     expect(describeSchedule({ frequency: 'daily', day_of_week: null, day_of_month: null, time_of_day: '08:00' })).toBe('Daily · 8:00 AM');
     expect(describeSchedule({ frequency: 'weekly', day_of_week: 1, day_of_month: null, time_of_day: '13:05' })).toBe('Weekly · Mon · 1:05 PM');
     expect(describeSchedule({ frequency: 'monthly', day_of_week: null, day_of_month: 22, time_of_day: '00:00' })).toBe('Monthly · 22nd · 12:00 AM');
+  });
+});
+
+describe('Pacific calendar days', () => {
+  it('puts a late-evening Pacific scan on its Pacific date, not the UTC one', () => {
+    // 2026-11-02 04:30 UTC is still Nov 1 at 8:30 PM in Seattle.
+    expect(zonedDayKey(utc('2026-11-02T04:30:00Z'))).toBe('2026-11-01');
+  });
+  it('gives a normal day 24 hours and a DST day 25', () => {
+    const [start, end] = zonedDayRange('2026-07-15')!;
+    expect(start).toBe(utc('2026-07-15T07:00:00Z'));
+    expect(end - start).toBe(24 * 3_600_000);
+    const [s2, e2] = zonedDayRange('2026-11-01')!; // clocks fall back that morning
+    expect(e2 - s2).toBe(25 * 3_600_000);
+  });
+  it('rejects malformed or impossible dates', () => {
+    expect(zonedDayRange('2026-02-30')).toBeNull();
+    expect(zonedDayRange('nov 1')).toBeNull();
+  });
+  it('formats a day for display', () => {
+    expect(formatDayKey('2026-11-01')).toBe('Sun, Nov 1, 2026');
   });
 });

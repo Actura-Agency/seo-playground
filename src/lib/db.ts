@@ -557,6 +557,10 @@ function initSchema(db: Database.Database) {
   addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN schedule_id INTEGER');
   // Live and Priority were removed from the app; schedules created with them now run on Standard.
   db.exec(`UPDATE grid_schedules SET queue_mode = 'standard' WHERE queue_mode != 'standard'`);
+  // The client a schedule belongs to; the automation page groups schedules by it. Schedules made
+  // before this column existed start out under their business name.
+  addColumnIfMissing(db, 'grid_schedules', `ADD COLUMN client TEXT NOT NULL DEFAULT ''`);
+  db.exec(`UPDATE grid_schedules SET client = target WHERE client = ''`);
   addColumnIfMissing(db, 'reviews_tasks', 'ADD COLUMN meta TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN keyword TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN technology TEXT');
@@ -1510,6 +1514,8 @@ export type GridScheduleStatus = 'starting' | 'running' | 'success' | 'failed';
 
 export interface GridSchedule {
   id: number;
+  /** Groups schedules on the automation page (e.g. every "Arctic Pools and Spas" keyword). */
+  client: string;
   label: string;
   keyword: string;
   target: string;
@@ -1537,7 +1543,7 @@ export interface GridSchedule {
 
 /** Everything the schedule form sets. All of it stays editable after creation. */
 export type GridScheduleInput = Pick<GridSchedule,
-  'label' | 'keyword' | 'target' | 'center' | 'grid_size' | 'spacing_km' | 'language'
+  'client' | 'label' | 'keyword' | 'target' | 'center' | 'grid_size' | 'spacing_km' | 'language'
   | 'queue_mode' | 'depth' | 'frequency' | 'day_of_week' | 'day_of_month' | 'time_of_day'>;
 
 type GridScheduleRow = Omit<GridSchedule, 'enabled'> & { enabled: number };
@@ -1548,7 +1554,7 @@ function toGridSchedule(r: GridScheduleRow): GridSchedule {
 
 export function getGridSchedules(): GridSchedule[] {
   return (getDb()
-    .prepare('SELECT * FROM grid_schedules ORDER BY label COLLATE NOCASE, keyword COLLATE NOCASE')
+    .prepare('SELECT * FROM grid_schedules ORDER BY client COLLATE NOCASE, label COLLATE NOCASE, keyword COLLATE NOCASE')
     .all() as GridScheduleRow[]).map(toGridSchedule);
 }
 
@@ -1559,10 +1565,10 @@ export function getGridSchedule(id: number): GridSchedule | null {
 
 export function createGridSchedule(input: GridScheduleInput, nextRunAt: number): number {
   const result = getDb()
-    .prepare(`INSERT INTO grid_schedules (label, keyword, target, center, grid_size, spacing_km, language, queue_mode, depth,
+    .prepare(`INSERT INTO grid_schedules (client, label, keyword, target, center, grid_size, spacing_km, language, queue_mode, depth,
       frequency, day_of_week, day_of_month, time_of_day, enabled, next_run_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
-    .run(input.label, input.keyword, input.target, input.center, input.grid_size, input.spacing_km, input.language,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+    .run(input.client, input.label, input.keyword, input.target, input.center, input.grid_size, input.spacing_km, input.language,
       input.queue_mode, input.depth, input.frequency, input.day_of_week, input.day_of_month, input.time_of_day,
       nextRunAt, Date.now());
   return Number(result.lastInsertRowid);
@@ -1571,10 +1577,10 @@ export function createGridSchedule(input: GridScheduleInput, nextRunAt: number):
 /** Saves every setting of a schedule (what, when and how it scans). Run history is kept. */
 export function updateGridSchedule(id: number, input: GridScheduleInput, nextRunAt: number | null): void {
   getDb()
-    .prepare(`UPDATE grid_schedules SET label = ?, keyword = ?, target = ?, center = ?, grid_size = ?, spacing_km = ?,
+    .prepare(`UPDATE grid_schedules SET client = ?, label = ?, keyword = ?, target = ?, center = ?, grid_size = ?, spacing_km = ?,
       language = ?, queue_mode = ?, depth = ?, frequency = ?, day_of_week = ?, day_of_month = ?, time_of_day = ?,
       next_run_at = ? WHERE id = ?`)
-    .run(input.label, input.keyword, input.target, input.center, input.grid_size, input.spacing_km, input.language,
+    .run(input.client, input.label, input.keyword, input.target, input.center, input.grid_size, input.spacing_km, input.language,
       input.queue_mode, input.depth, input.frequency, input.day_of_week, input.day_of_month, input.time_of_day,
       nextRunAt, id);
 }
@@ -1646,6 +1652,52 @@ export function syncRunningGridSchedules(): void {
             : 'Scan record missing');
     }
   }
+}
+
+/** A saved scan with its point data, for PDF reports. */
+export type GridScanWithResults = GridSearchEntry & { results: GridPoint[] };
+
+function toScanWithResults(r: GridSearchRow): GridScanWithResults {
+  let results: GridPoint[] = [];
+  try { results = r.results ? JSON.parse(r.results) as GridPoint[] : []; } catch { /* unreadable: report shows it as empty */ }
+  return {
+    id: r.id, ts: r.ts, keyword: r.keyword, target: r.target, center: r.center,
+    grid_size: r.grid_size, spacing_km: r.spacing_km, language: r.language, cost: r.cost ?? undefined,
+    status: (r.status ?? 'done') as GridStatus,
+    queue_mode: (r.queue_mode ?? 'live') as GridQueueMode,
+    depth: r.depth ?? 20,
+    schedule_id: r.schedule_id ?? undefined,
+    results,
+  };
+}
+
+const SCAN_COLUMNS = 'id, ts, keyword, target, center, grid_size, spacing_km, language, cost, status, queue_mode, depth, schedule_id, results';
+
+/** These scans, in the order given. Missing and still-running scans are left out. */
+export function getGridScansByIds(ids: string[]): GridScanWithResults[] {
+  if (ids.length === 0) return [];
+  const rows = getDb()
+    .prepare(`SELECT ${SCAN_COLUMNS} FROM grid_searches WHERE status != 'pending' AND id IN (${ids.map(() => '?').join(', ')})`)
+    .all(...ids) as GridSearchRow[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.flatMap((id) => (byId.has(id) ? [toScanWithResults(byId.get(id)!)] : []));
+}
+
+/** When each finished (or timed-out) scan from these schedules ran, newest first. No point data. */
+export function getScheduleScanTimes(scheduleIds: number[]): number[] {
+  if (scheduleIds.length === 0) return [];
+  return (getDb()
+    .prepare(`SELECT ts FROM grid_searches WHERE status != 'pending' AND schedule_id IN (${scheduleIds.map(() => '?').join(', ')}) ORDER BY ts DESC`)
+    .all(...scheduleIds) as Array<{ ts: number }>).map((r) => r.ts);
+}
+
+/** Finished (or timed-out) scans from these schedules with from <= ts < to, oldest first. */
+export function getScheduleScansBetween(scheduleIds: number[], from: number, to: number): GridScanWithResults[] {
+  if (scheduleIds.length === 0) return [];
+  return (getDb()
+    .prepare(`SELECT ${SCAN_COLUMNS} FROM grid_searches WHERE status != 'pending' AND ts >= ? AND ts < ?
+      AND schedule_id IN (${scheduleIds.map(() => '?').join(', ')}) ORDER BY ts ASC`)
+    .all(from, to, ...scheduleIds) as GridSearchRow[]).map(toScanWithResults);
 }
 
 /** Manual (non-automated) scans, newest first: the ones a new schedule can be created from. */

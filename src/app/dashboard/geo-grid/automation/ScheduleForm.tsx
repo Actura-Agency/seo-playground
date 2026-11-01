@@ -18,6 +18,7 @@ export interface ScheduleFormValues {
   center: string;
   gridSize: number;
   spacingKm: number;
+  client: string;
   label: string;
   frequency: Frequency;
   dayOfWeek: number;
@@ -36,12 +37,16 @@ interface Props {
   title: string;
   /** Optional one-line note under the title. */
   note?: string;
+  /** Existing client names, suggested while typing so the same client is spelled the same way. */
+  clients: string[];
+  /** Where Cancel goes: the client's page when the form was opened from it, else the client list. */
+  cancelHref: string;
 }
 
 const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5';
 const inputCls = 'w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 transition-all';
 
-export default function ScheduleForm({ scheduleId, initial, defaultCenter, title, note }: Props) {
+export default function ScheduleForm({ scheduleId, initial, defaultCenter, title, note, clients, cancelHref }: Props) {
   const [coordinate, setCoordinate] = useState(initial.center || defaultCenter);
   const [gridSize, setGridSize] = useState(initial.gridSize);
   const [spacingMiles, setSpacingMiles] = useState(nearestMilePreset(initial.spacingKm / KM_PER_MILE));
@@ -131,10 +136,23 @@ export default function ScheduleForm({ scheduleId, initial, defaultCenter, title
       {/* When to scan */}
       <div className="pt-2 border-t border-slate-100 dark:border-slate-800" />
 
-      <div>
-        <label className={labelCls}>Name</label>
-        <input type="text" name="label" defaultValue={initial.label} maxLength={100} placeholder="Defaults to the business name" className={inputCls} />
-        <p className="text-[11px] text-slate-400 mt-1">Shown on the automation list.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className={labelCls}>Client</label>
+          <input
+            type="text" name="client" defaultValue={initial.client} maxLength={100} list="grid-clients"
+            placeholder="Defaults to the business name" className={inputCls}
+          />
+          <datalist id="grid-clients">
+            {clients.map((c) => <option key={c} value={c} />)}
+          </datalist>
+          <p className="text-[11px] text-slate-400 mt-1">Schedules with the same client are grouped together.</p>
+        </div>
+        <div>
+          <label className={labelCls}>Name</label>
+          <input type="text" name="label" defaultValue={initial.label} maxLength={100} placeholder="Defaults to the business name" className={inputCls} />
+          <p className="text-[11px] text-slate-400 mt-1">Shown in the client&apos;s list of schedules.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -230,7 +248,7 @@ export default function ScheduleForm({ scheduleId, initial, defaultCenter, title
           {scheduleId ? 'Save changes' : 'Create schedule'}
         </PendingButton>
         <a
-          href="/dashboard/geo-grid/automation"
+          href={cancelHref}
           className="px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
         >
           Cancel

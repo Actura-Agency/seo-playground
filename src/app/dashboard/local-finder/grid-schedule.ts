@@ -49,6 +49,34 @@ export function computeNextRun(s: ScheduleTiming, after: number, tz = AUTOMATION
   throw new Error(`No upcoming run found for schedule ${JSON.stringify(s)}`);
 }
 
+/** The calendar day ("2026-11-01") an instant falls on in the automation timezone. */
+export function zonedDayKey(ts: number, tz = AUTOMATION_TZ): string {
+  // en-CA formats dates as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts));
+}
+
+/** [start, end) instants of a "YYYY-MM-DD" day in the automation timezone (23 or 25 h on DST days); null if malformed. */
+export function zonedDayRange(day: string, tz = AUTOMATION_TZ): [number, number] | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const check = new Date(Date.UTC(y, mo - 1, d));
+  if (check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return null;
+  const next = new Date(Date.UTC(y, mo - 1, d + 1));
+  return [
+    zonedTimeToUtc(y, mo, d, 0, 0, tz),
+    zonedTimeToUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0, tz),
+  ];
+}
+
+/** "Sun, Nov 1, 2026" from "2026-11-01". */
+export function formatDayKey(day: string): string {
+  const [y, mo, d] = day.split('-').map(Number);
+  return new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
 /** "8:00 AM" from "08:00". */
 export function formatTimeOfDay(time: string): string {
   const [h, m] = time.split(':').map(Number);

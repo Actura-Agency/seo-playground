@@ -118,7 +118,7 @@ const COLLAPSE_STORAGE_KEY = 'sidebar-collapsed-sections';
 /** Desktop: the menu as a fixed column on the left. Hidden on phones, where MobileSidebar takes over. */
 export default function Sidebar() {
   return (
-    <div className="hidden md:flex h-full w-60 shrink-0">
+    <div className="hidden md:flex print:hidden h-full w-60 shrink-0">
       <SidebarPanel />
     </div>
   );

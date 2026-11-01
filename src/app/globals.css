@@ -100,3 +100,11 @@ html { scroll-behavior: smooth; }
 .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: rgb(71 85 105); /* slate-600 */
 }
+
+/* Printing (geo-grid PDF reports): US Letter pages, white background. */
+@media print {
+  @page { size: letter; margin: 0.4in; }
+  html, body { background: #fff !important; }
+  /* Keep map pins, bars and badges in color even when "Background graphics" is off. */
+  .grid-report { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

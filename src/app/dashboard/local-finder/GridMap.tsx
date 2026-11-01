@@ -39,6 +39,11 @@ interface Props {
   highlightLocation?: { lat: number; lng: number } | null;
   /** True while the address lookup above is in flight — shown as a small spinner, not text, so the banner never wraps. */
   locatingBusiness?: boolean;
+  /**
+   * PDF reports: a fixed square map with no controls, drawn as raster tiles (the default vector
+   * map is WebGL, which browsers can print blank).
+   */
+  printView?: boolean;
 }
 
 // One distinct shade per rank 1-8 (a green-to-red gradient) so adjacent markers on the map read
@@ -116,13 +121,13 @@ function pointRank(point: GridPoint, highlightKey?: string): number | null {
 }
 
 /** Fits the viewport to every grid point once, on mount — mirrors the old L.map.fitBounds() call. */
-function FitBoundsOnLoad({ points }: { points: { lat: number; lng: number }[] }) {
+function FitBoundsOnLoad({ points, padding = 48 }: { points: { lat: number; lng: number }[]; padding?: number }) {
   const map = useMap();
   useEffect(() => {
     if (!map || points.length === 0) return;
     const bounds = new google.maps.LatLngBounds();
     points.forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, 48);
+    map.fitBounds(bounds, padding);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map]);
   return null;
@@ -237,13 +242,18 @@ function useIsNarrow(): boolean {
   return narrow;
 }
 
-export default function GridMap({ points, gridSize, target, highlightKey, highlightName, highlightLocation, locatingBusiness }: Props) {
+export default function GridMap({ points, gridSize, target, highlightKey, highlightName, highlightLocation, locatingBusiness, printView }: Props) {
   const half = Math.floor(gridSize / 2);
   const geoPoints = useMemo(() => points.filter((p) => p.lat != null && p.lng != null), [points]);
   // Phones: smaller pins for big grids so neighbors don't overlap on a narrow map.
   const narrow = useIsNarrow();
-  const cellPx = gridSize <= 3 ? 52 : gridSize <= 5 ? 44 : gridSize <= 7 ? 38 : narrow ? (gridSize >= 11 ? 22 : 26) : 32;
-  const fontSize = gridSize <= 5 ? 15 : narrow && gridSize > 7 ? 10 : 13;
+  const cellPx = printView
+    ? (gridSize <= 3 ? 44 : gridSize <= 5 ? 38 : gridSize <= 7 ? 32 : gridSize <= 9 ? 28 : gridSize <= 11 ? 24 : 21)
+    : gridSize <= 3 ? 52 : gridSize <= 5 ? 44 : gridSize <= 7 ? 38 : narrow ? (gridSize >= 11 ? 22 : 26) : 32;
+  const fontSize = printView
+    ? (gridSize <= 5 ? 14 : gridSize <= 9 ? 12 : 10)
+    : gridSize <= 5 ? 15 : narrow && gridSize > 7 ? 10 : 13;
+  const heightCls = printView ? 'h-[430px]' : 'h-[420px] sm:h-[520px]';
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   const boundsPoints = useMemo(
@@ -254,7 +264,7 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
   if (geoPoints.length === 0 || !apiKey) {
     return (
       <div
-        className="w-full h-[420px] sm:h-[520px] rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center"
+        className={`w-full ${heightCls} rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center`}
       >
         <p className="text-sm text-slate-400">
           {apiKey ? 'No results with coordinates.' : 'Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.'}
@@ -277,15 +287,17 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
         </div>
       )}
       <div
-        className="w-full h-[420px] sm:h-[520px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800"
+        className={`w-full ${heightCls} rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800`}
       >
         <APIProvider apiKey={apiKey}>
           <Map
             mapId="f66d288b089a743094f4de9b"
             defaultCenter={{ lat: geoPoints[0].lat!, lng: geoPoints[0].lng! }}
             defaultZoom={13}
-            gestureHandling="greedy"
-            disableDefaultUI={false}
+            gestureHandling={printView ? 'none' : 'greedy'}
+            disableDefaultUI={!!printView}
+            keyboardShortcuts={!printView}
+            renderingType={printView ? ('RASTER' as google.maps.RenderingType) : undefined}
             streetViewControl={false}
             rotateControl={false}
             // style: 2 = DROPDOWN_MENU (a numeric literal, not the google.maps.* enum, since that
@@ -294,7 +306,7 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
             mapTypeControlOptions={{ style: 2 as google.maps.MapTypeControlStyle }}
             style={{ width: '100%', height: '100%' }}
           >
-            <FitBoundsOnLoad points={boundsPoints} />
+            <FitBoundsOnLoad points={boundsPoints} padding={printView ? 24 : 48} />
             {geoPoints.map((point) => (
               <GridMarker
                 key={`${point.row}-${point.col}`}

@@ -11,6 +11,7 @@ import { stableGridId, type GridDepth } from '../local-finder/grid-api';
 import { startGridScan } from '../local-finder/grid-scan';
 import { AUTOMATION_TZ } from '../local-finder/grid-schedule';
 import { gridRerunUrl } from '../local-finder/grid-links';
+import { scanReportUrl } from './automation/clients';
 
 interface SearchParams {
   keyword?: string;
@@ -210,6 +211,16 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
                 {gridEntry.schedule_id !== undefined && (
                   <> · Automated{scheduleLabel ? ` (${scheduleLabel})` : ''}</>
                 )}
+                {' · '}
+                <a
+                  href={scanReportUrl([gridEntry.id])}
+                  target="_blank"
+                  rel="noopener"
+                  className="font-black uppercase tracking-widest text-blue-500 hover:text-blue-700"
+                  title="Open a print-ready report of this scan (Save as PDF)"
+                >
+                  Export PDF
+                </a>
               </p>
             )}
             {gridResults && gridEntry && (

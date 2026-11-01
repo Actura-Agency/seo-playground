@@ -10,7 +10,8 @@ process.env.DB_PATH = path.join(tmpDir, 'test.db');
 import {
   createGridSchedule, getGridSchedule, getDueGridSchedules, claimGridScheduleRun, setGridScheduleRunResult,
   syncRunningGridSchedules, failInterruptedGridSchedules, setGridScheduleEnabled, saveGridSearchPending,
-  updateGridProgress, getGridHistory, getGridSearchesBySchedule, updateGridSchedule, type GridScheduleInput,
+  updateGridProgress, getGridHistory, getGridSearchesBySchedule, updateGridSchedule, saveGridSearch,
+  getGridScansByIds, getScheduleScanTimes, getScheduleScansBetween, type GridScheduleInput, type GridSearchEntry,
 } from './db';
 
 afterAll(() => {
@@ -18,7 +19,7 @@ afterAll(() => {
 });
 
 const input: GridScheduleInput = {
-  label: 'Joe\'s Plumbing', keyword: 'plumber', target: 'joes plumbing', center: '47.6,-122.3',
+  client: "Joe's Plumbing Co", label: 'Joe\'s Plumbing', keyword: 'plumber', target: 'joes plumbing', center: '47.6,-122.3',
   grid_size: 3, spacing_km: 1, language: 'English', queue_mode: 'standard', depth: 10,
   frequency: 'daily', day_of_week: null, day_of_month: null, time_of_day: '08:00',
 };
@@ -98,13 +99,35 @@ describe('grid schedules', () => {
   it('lets every setting be edited later, including business, location and grid', () => {
     const id = createGridSchedule(input, 1_000);
     updateGridSchedule(id, {
-      ...input, label: 'Joe North', keyword: 'drain cleaning', target: 'joes plumbing north',
+      ...input, client: 'Joe Group', label: 'Joe North', keyword: 'drain cleaning', target: 'joes plumbing north',
       center: '47.7,-122.4', grid_size: 7, spacing_km: 2, queue_mode: 'priority', depth: 20,
       frequency: 'monthly', day_of_month: 15,
     }, 5_000);
     const s = getGridSchedule(id)!;
-    expect([s.label, s.keyword, s.target, s.center, s.grid_size, s.spacing_km]).toEqual(
-      ['Joe North', 'drain cleaning', 'joes plumbing north', '47.7,-122.4', 7, 2]);
+    expect([s.client, s.label, s.keyword, s.target, s.center, s.grid_size, s.spacing_km]).toEqual(
+      ['Joe Group', 'Joe North', 'drain cleaning', 'joes plumbing north', '47.7,-122.4', 7, 2]);
     expect([s.queue_mode, s.depth, s.frequency, s.day_of_month, s.next_run_at]).toEqual(['priority', 20, 'monthly', 15, 5_000]);
+  });
+});
+
+describe('grid report queries', () => {
+  const scan = (id: string, ts: number, scheduleId: number | undefined, status: GridSearchEntry['status'] = 'done'): GridSearchEntry => ({
+    id, ts, keyword: 'plumber', target: 'joes plumbing', center: '47.6,-122.3', grid_size: 3, spacing_km: 1,
+    language: 'English', status, queue_mode: 'standard', depth: 10, schedule_id: scheduleId,
+  });
+  const points = [{ row: 0, col: 0, lat: 1, lng: 2, rank: 3, items: [] }];
+
+  it('stores the client and returns scans with point data in the order asked', () => {
+    const a = createGridSchedule(input, 1_000);
+    expect(getGridSchedule(a)!.client).toBe("Joe's Plumbing Co");
+    saveGridSearch(scan('rep-1', 10_000, a), points);
+    saveGridSearch(scan('rep-2', 20_000, a), points);
+    saveGridSearch(scan('rep-pending', 30_000, a, 'pending'), points);
+
+    expect(getGridScansByIds(['rep-2', 'missing', 'rep-1', 'rep-pending']).map((s) => s.id)).toEqual(['rep-2', 'rep-1']);
+    expect(getGridScansByIds(['rep-1'])[0].results).toEqual(points);
+    expect(getScheduleScanTimes([a])).toEqual([20_000, 10_000]);
+    expect(getScheduleScansBetween([a], 10_000, 20_000).map((s) => s.id)).toEqual(['rep-1']);
+    expect(getScheduleScansBetween([], 0, 1e15)).toEqual([]);
   });
 });

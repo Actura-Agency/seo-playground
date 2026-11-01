@@ -3,10 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import {
-  getGridSchedule, createGridSchedule, updateGridSchedule, setGridScheduleEnabled,
+  getGridSchedule, getGridSchedules, createGridSchedule, updateGridSchedule, setGridScheduleEnabled,
   deleteGridSchedule, type GridScheduleInput, type GridScheduleFrequency,
 } from '@/lib/db';
 import { computeNextRun, parseNewScanSettings } from '../../local-finder/grid-schedule';
+import { clientUrl, normalizeClientName, schedulesForClient } from './clients';
 
 const PATH = '/dashboard/geo-grid/automation';
 
@@ -23,6 +24,7 @@ function parseScheduleForm(formData: FormData): GridScheduleInput | null {
   const dow = parseInt(String(formData.get('day_of_week') ?? ''), 10);
   const dom = parseInt(String(formData.get('day_of_month') ?? ''), 10);
   return {
+    client: normalizeClientName(String(formData.get('client') ?? '')).slice(0, 100) || scan.target,
     label: String(formData.get('label') ?? '').trim().slice(0, 100) || scan.target,
     keyword: scan.keyword,
     target: scan.target,
@@ -51,19 +53,23 @@ export async function saveScheduleAction(formData: FormData) {
   } else {
     createGridSchedule(input, computeNextRun(input, Date.now()));
   }
-  revalidatePath(PATH);
-  redirect(PATH);
+  revalidatePath(PATH, 'layout');
+  // Land on the client's page, where the saved schedule is listed.
+  redirect(clientUrl(input.client));
 }
 
 export async function toggleScheduleAction(formData: FormData) {
   const s = getGridSchedule(parseInt(String(formData.get('schedule_id') ?? ''), 10));
   if (s) setGridScheduleEnabled(s.id, !s.enabled, s.enabled ? null : computeNextRun(s, Date.now()));
-  revalidatePath(PATH);
+  revalidatePath(PATH, 'layout');
 }
 
 export async function deleteScheduleAction(formData: FormData) {
   const id = parseInt(String(formData.get('schedule_id') ?? ''), 10);
-  if (id) deleteGridSchedule(id);
-  revalidatePath(PATH);
-  redirect(PATH);
+  const s = id ? getGridSchedule(id) : null;
+  if (s) deleteGridSchedule(s.id);
+  revalidatePath(PATH, 'layout');
+  // Back to the client's page while it still has schedules; otherwise to the client list.
+  const client = s ? s.client || s.target : '';
+  redirect(client && schedulesForClient(getGridSchedules(), client).length > 0 ? clientUrl(client) : PATH);
 }
