@@ -29,7 +29,7 @@ const MODE_LABEL: Record<GridQueueMode, string> = {
 const WAIT_HINT: Record<GridQueueMode, string> = {
   live:     'Results in ~6 seconds',
   priority: 'Results in ~1 minute on average',
-  standard: 'Results typically in 5–45 minutes',
+  standard: 'Usually 1–2 minutes',
 };
 
 function formatDuration(ms: number): string {

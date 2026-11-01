@@ -555,6 +555,8 @@ function initSchema(db: Database.Database) {
   addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN depth INTEGER NOT NULL DEFAULT 20');
   // Set when the scan was started by a grid_schedules entry (automation); NULL for manual scans.
   addColumnIfMissing(db, 'grid_searches', 'ADD COLUMN schedule_id INTEGER');
+  // Live and Priority were removed from the app; schedules created with them now run on Standard.
+  db.exec(`UPDATE grid_schedules SET queue_mode = 'standard' WHERE queue_mode != 'standard'`);
   addColumnIfMissing(db, 'reviews_tasks', 'ADD COLUMN meta TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN keyword TEXT');
   addColumnIfMissing(db, 'domain_find_searches', 'ADD COLUMN technology TEXT');

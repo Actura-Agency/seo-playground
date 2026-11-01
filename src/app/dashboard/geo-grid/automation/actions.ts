@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import {
   getGridSchedule, createGridSchedule, updateGridSchedule, setGridScheduleEnabled,
-  deleteGridSchedule, type GridScheduleInput, type GridScheduleFrequency, type GridQueueMode,
+  deleteGridSchedule, type GridScheduleInput, type GridScheduleFrequency,
 } from '@/lib/db';
 import { computeNextRun, parseNewScanSettings } from '../../local-finder/grid-schedule';
 
@@ -19,7 +19,6 @@ function parseScheduleForm(formData: FormData): GridScheduleInput | null {
   const scan = parseNewScanSettings((k) => formData.get(k)?.toString());
   if (!scan) return null;
   const frequency = (['daily', 'weekly', 'monthly'] as const).find((f) => f === formData.get('frequency')) ?? 'weekly';
-  const queueMode = (['live', 'priority', 'standard'] as const).find((m) => m === formData.get('queue_mode')) ?? 'standard';
   const time = String(formData.get('time_of_day') ?? '');
   const dow = parseInt(String(formData.get('day_of_week') ?? ''), 10);
   const dom = parseInt(String(formData.get('day_of_month') ?? ''), 10);
@@ -35,9 +34,8 @@ function parseScheduleForm(formData: FormData): GridScheduleInput | null {
     day_of_week: frequency === 'weekly' ? (dow >= 0 && dow <= 6 ? dow : 1) : null,
     day_of_month: frequency === 'monthly' ? (dom >= 1 && dom <= 28 ? dom : 1) : null,
     time_of_day: /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : '08:00',
-    queue_mode: queueMode as GridQueueMode,
-    // Live is a flat price at either depth, so it always fetches the full 20 (same rule as manual scans).
-    depth: queueMode !== 'live' && formData.get('depth') === '10' ? 10 : 20,
+    queue_mode: 'standard',
+    depth: formData.get('depth') === '10' ? 10 : 20,
   };
 }
 

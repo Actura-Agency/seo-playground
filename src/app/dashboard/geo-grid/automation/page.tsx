@@ -70,7 +70,7 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
         keyword: editing.keyword, target: editing.target, center: editing.center,
         gridSize: editing.grid_size, spacingKm: editing.spacing_km, label: editing.label,
         frequency: editing.frequency, dayOfWeek: editing.day_of_week ?? 1, dayOfMonth: editing.day_of_month ?? 1,
-        timeOfDay: editing.time_of_day, queueMode: editing.queue_mode, depth: editing.depth === 10 ? 10 : 20,
+        timeOfDay: editing.time_of_day, depth: editing.depth === 10 ? 10 : 20,
       },
     };
   } else if (fromScan) {
@@ -81,12 +81,10 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
         ...newTiming,
         keyword: fromScan.keyword, target: fromScan.target, center: fromScan.center,
         gridSize: fromScan.grid_size, spacingKm: fromScan.spacing_km, label: fromScan.target,
-        // Cheapest by default; the form still offers every mode.
-        queueMode: 'standard', depth: 10,
+        depth: 10,
       },
     };
   } else if (isNew) {
-    const mode = params.queue_mode === 'live' || params.queue_mode === 'priority' ? params.queue_mode : 'standard';
     const gridSize = parseInt(params.grid_size ?? '', 10);
     const spacingKm = parseFloat(params.spacing_km ?? '');
     form = {
@@ -98,7 +96,7 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
         gridSize: [3, 5, 7, 9, 11, 13].includes(gridSize) ? gridSize : 11,
         spacingKm: spacingKm > 0 ? spacingKm : KM_PER_MILE,
         label: params.grid_target ?? '',
-        queueMode: mode, depth: mode !== 'live' && params.depth === '20' ? 20 : 10,
+        depth: params.depth === '20' ? 20 : 10,
       },
     };
   }
@@ -204,7 +202,7 @@ export default async function GridAutomationPage({ searchParams }: { searchParam
                         <p className="font-bold text-slate-800 dark:text-slate-200">{s.label}</p>
                         <p className="text-[13px] text-slate-600 dark:text-slate-300">&ldquo;{s.keyword}&rdquo;</p>
                         <p className="text-[11px] text-slate-400">
-                          {s.grid_size}×{s.grid_size} · {s.queue_mode === 'standard' ? 'Standard' : s.queue_mode === 'priority' ? 'Priority' : 'Live'}, Top {s.depth}
+                          {s.grid_size}×{s.grid_size} · Top {s.depth}
                         </p>
                         {runs.length > 0 && (
                           <details className="mt-1.5">

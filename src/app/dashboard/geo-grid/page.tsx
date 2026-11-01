@@ -69,12 +69,10 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     } else {
       const gridSize = Math.min(Math.max(parseInt(params.grid_size ?? '11', 10), 3), 13);
       const spacingKm = parseFloat(params.spacing_km ?? '1');
-      const queueMode = (params.queue_mode ?? 'standard') as GridQueueMode;
-      // Live is a flat price per point at either depth, so it always fetches the full 20.
-      const depth: GridDepth = queueMode !== 'live' && params.depth === '10' ? 10 : 20;
+      const depth: GridDepth = params.depth === '10' ? 10 : 20;
 
       const id = stableGridId(
-        params.keyword, params.location_coordinate, gridSize, spacingKm, params.grid_target, queueMode, depth,
+        params.keyword, params.location_coordinate, gridSize, spacingKm, params.grid_target, 'standard', depth,
       );
 
       if (!getGridEntry(id)) {
@@ -85,7 +83,6 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
           spacingKm,
           target: params.grid_target,
           language: params.language ?? defaultLanguage,
-          queueMode,
           depth,
         });
         if (result.error) gridError = result.error;
@@ -121,7 +118,6 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
     gridSize: (params.grid_size ?? gridEntry?.grid_size ?? '11').toString(),
     spacingKm: (params.spacing_km ?? gridEntry?.spacing_km ?? '1').toString(),
     gridTarget: (params.grid_target ?? gridEntry?.target ?? '').toString(),
-    queueMode: (params.queue_mode ?? gridEntry?.queue_mode ?? 'standard').toString(),
   };
 
   const historyItems = gridHistory.map((entry) => {

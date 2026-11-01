@@ -59,8 +59,7 @@ export async function runGridSchedulerTick(now = Date.now()): Promise<void> {
           spacingKm: s.spacing_km,
           target: s.target,
           language: s.language,
-          queueMode: s.queue_mode,
-          depth: s.queue_mode !== 'live' && s.depth === 10 ? 10 : 20,
+          depth: s.depth === 10 ? 10 : 20,
         }, s.id);
         if (result.error) {
           setGridScheduleRunResult(s.id, 'failed', null, result.error);

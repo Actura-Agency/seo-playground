@@ -1,8 +1,8 @@
 import {
-  getCredentials, getGridEntry, getGridProgress, updateGridProgress, saveGridSearch, saveGridSearchPending,
-  type GridPoint, type GridLocalItem, type GridTaskPoint, type GridSearchEntry, type GridQueueMode, type GridStatus,
+  getCredentials, getGridEntry, getGridProgress, updateGridProgress, saveGridSearchPending,
+  type GridPoint, type GridLocalItem, type GridTaskPoint, type GridSearchEntry, type GridStatus,
 } from '@/lib/db';
-import { fetchGridSearch, postGridTasksQueue, type GridDepth } from './grid-api';
+import { postGridTasksQueue, type GridDepth } from './grid-api';
 
 export interface GridScanSettings {
   keyword: string;
@@ -11,14 +11,13 @@ export interface GridScanSettings {
   spacingKm: number;
   target: string;
   language: string;
-  queueMode: GridQueueMode;
   depth: GridDepth;
 }
 
 /**
  * Starts one geo-grid scan and saves it to history under `id` — the single code path shared by the
- * manual form (geo-grid/page.tsx) and the automation scheduler. Live scans finish before this
- * returns ("done"); queued scans are saved as "pending" and completed by collectGridResults().
+ * manual form (geo-grid/page.tsx) and the automation scheduler. Every scan goes on DataForSEO's
+ * Standard queue, is saved as "pending", and is completed by collectGridResults().
  */
 export async function startGridScan(
   id: string, s: GridScanSettings, scheduleId?: number,
@@ -35,22 +34,13 @@ export async function startGridScan(
     spacing_km: s.spacingKm,
     language: s.language,
     status: 'done',
-    queue_mode: s.queueMode,
+    queue_mode: 'standard',
     depth: s.depth,
     schedule_id: scheduleId,
   };
 
-  if (s.queueMode === 'live') {
-    const result = await fetchGridSearch(
-      s.keyword, s.center, s.gridSize, s.spacingKm, s.language, s.target, creds.login, creds.pass, s.depth,
-    );
-    if (result.error) return { error: result.error };
-    saveGridSearch({ ...baseEntry, cost: result.cost }, result.results);
-    return { status: 'done' };
-  }
-
   const result = await postGridTasksQueue(
-    s.keyword, s.center, s.gridSize, s.spacingKm, s.language, creds.login, creds.pass, s.queueMode, s.depth,
+    s.keyword, s.center, s.gridSize, s.spacingKm, s.language, creds.login, creds.pass, 'standard', s.depth,
   );
   if (result.error) return { error: result.error };
   saveGridSearchPending({ ...baseEntry, status: 'pending', cost: result.cost }, result.taskPoints);

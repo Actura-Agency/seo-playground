@@ -2,7 +2,7 @@
 
 import { useState, lazy, Suspense } from 'react';
 import { LANGUAGES } from '@/lib/geo-options';
-import { QUEUE_MODES, type QueueMode, type Depth } from './grid-pricing';
+import { SCAN_COST, SCAN_WAIT, type Depth } from './grid-pricing';
 import { KM_PER_MILE, MILE_SPACING_OPTIONS, nearestMilePreset } from './grid-form-options';
 
 const MapPicker = lazy(() => import('./MapPicker'));
@@ -24,23 +24,12 @@ interface Props {
     gridSize?: string;
     spacingKm?: string;
     gridTarget?: string;
-    queueMode?: string;
   };
 }
 
 
-// Live requests are throttled to 6 in flight; each point currently takes ~8-10s on DataForSEO's side.
-const LIVE_SECONDS_PER_BATCH = 9;
-const LIVE_CONCURRENCY = 6;
-
 function formatCost(n: number) {
   return `$${n.toFixed(4)}`;
-}
-
-function formatLiveDuration(totalPoints: number) {
-  const seconds = Math.ceil(totalPoints / LIVE_CONCURRENCY) * LIVE_SECONDS_PER_BATCH;
-  if (seconds < 60) return `~${seconds}s`;
-  return `~${Math.ceil(seconds / 60)} min`;
 }
 
 export default function LocalFinderForm({ defaults }: Props) {
@@ -56,9 +45,7 @@ export default function LocalFinderForm({ defaults }: Props) {
     nearestMilePreset(parseFloat(defaults.spacingKm ?? String(KM_PER_MILE)) / KM_PER_MILE),
   );
   const spacingKm = spacingMiles * KM_PER_MILE;
-  const [queueMode, setQueueMode] = useState<QueueMode>((defaults.queueMode as QueueMode) || 'standard');
   const [depth, setDepth] = useState<Depth>(defaults.depth === '20' ? 20 : 10);
-  const effectiveDepth: Depth = queueMode === 'live' ? 20 : depth;
 
   const osOptions =
     device === 'mobile'
@@ -207,75 +194,45 @@ export default function LocalFinderForm({ defaults }: Props) {
             </div>
           </div>
 
-          {/* Queue mode */}
+          {/* Results per point. Every scan runs on DataForSEO's Standard queue (the cheapest). */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-black uppercase tracking-widest text-slate-400">API mode</label>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Results</span>
-                <div
-                  role="group"
-                  aria-label="Results per point"
-                  title={queueMode === 'live' ? 'Live costs the same at either depth, so it always returns the top 20.' : undefined}
-                  className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
-                >
-                  {([10, 20] as const).map((d) => {
-                    const on = effectiveDepth === d;
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-pressed={on}
-                        disabled={queueMode === 'live'}
-                        onClick={() => setDepth(d)}
-                        className={`px-2.5 py-1 text-[10px] font-black transition-colors disabled:cursor-not-allowed ${
+              <label className="block text-xs font-black uppercase tracking-widest text-slate-400">Results per point</label>
+              <div
+                role="group"
+                aria-label="Results per point"
+                className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+              >
+                {([10, 20] as const).map((d) => {
+                  const on = depth === d;
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setDepth(d)}
+                      className={`px-2.5 py-1 text-[10px] font-black transition-colors ${
                           on
                             ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
                             : 'bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                         }`}
-                      >
-                        Top {d}
-                      </button>
-                    );
-                  })}
-                </div>
+                    >
+                      Top {d}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <input type="hidden" name="queue_mode" value={queueMode} />
-            <input type="hidden" name="depth" value={effectiveDepth} />
-            <div className="grid grid-cols-3 gap-2">
-              {QUEUE_MODES.map((mode) => {
-                const active = queueMode === mode.value;
-                const totalPoints = gridSize * gridSize;
-                const estCost = formatCost(totalPoints * mode.cost[effectiveDepth]);
-                return (
-                  <button
-                    key={mode.value}
-                    type="button"
-                    onClick={() => setQueueMode(mode.value)}
-                    className={`flex flex-col gap-0.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                      active
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
-                    }`}
-                  >
-                    <span className={`text-xs font-black ${active ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                      {mode.label}
-                    </span>
-                    <span className={`text-[10px] font-mono ${active ? 'text-blue-500' : 'text-slate-400'}`}>{estCost}</span>
-                    <span className="text-[10px] text-slate-400">{mode.wait}</span>
-                  </button>
-                );
-              })}
+            <input type="hidden" name="queue_mode" value="standard" />
+            <input type="hidden" name="depth" value={depth} />
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-blue-500 bg-blue-50 dark:bg-blue-950">
+              <span className="text-xs font-black text-blue-700 dark:text-blue-400">
+                Est. cost <span className="font-mono text-blue-500">{formatCost(gridSize * gridSize * SCAN_COST[depth])}</span>
+              </span>
+              <span className="text-[10px] text-slate-400">{SCAN_WAIT}</span>
             </div>
             <p className="text-[11px] text-slate-400 mt-2">
-              {queueMode === 'live' ? (
-                <>Blocks the page for {formatLiveDuration(gridSize * gridSize)} — DataForSEO’s live endpoint has slowed down, so large grids can take several minutes. Live is a flat price, so it always returns the top 20.</>
-              ) : queueMode === 'priority' ? (
-                <>Tasks are queued with DataForSEO’s high-priority flag. The page will auto-refresh every 10 seconds until results are ready.</>
-              ) : (
-                <>Tasks are queued for standard background processing. The page will check every 10 seconds — or you can come back later.</>
-              )}
+              Runs in the background. The page checks every 10 seconds — or you can come back later.
             </p>
           </div>
         </>

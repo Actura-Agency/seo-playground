@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useState } from 'react';
 import PendingButton from '@/components/PendingButton';
-import { QUEUE_MODES, type QueueMode, type Depth } from '../../local-finder/grid-pricing';
+import { SCAN_COST, SCAN_WAIT, type Depth } from '../../local-finder/grid-pricing';
 import { GRID_SIZES, KM_PER_MILE, MILE_SPACING_OPTIONS, nearestMilePreset } from '../../local-finder/grid-form-options';
 import { WEEKDAYS, AUTOMATION_TZ_LABEL, runsPerMonth } from '../../local-finder/grid-schedule';
 import { saveScheduleAction } from './actions';
@@ -23,7 +23,6 @@ export interface ScheduleFormValues {
   dayOfWeek: number;
   dayOfMonth: number;
   timeOfDay: string;
-  queueMode: QueueMode;
   depth: Depth;
 }
 
@@ -48,10 +47,8 @@ export default function ScheduleForm({ scheduleId, initial, defaultCenter, title
   const [spacingMiles, setSpacingMiles] = useState(nearestMilePreset(initial.spacingKm / KM_PER_MILE));
   const spacingKm = spacingMiles * KM_PER_MILE;
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency);
-  const [queueMode, setQueueMode] = useState<QueueMode>(initial.queueMode);
   const [depth, setDepth] = useState<Depth>(initial.depth);
-  const effectiveDepth: Depth = queueMode === 'live' ? 20 : depth;
-  const points = gridSize * gridSize;
+  const perRun = gridSize * gridSize * SCAN_COST[depth];
 
   return (
     <form action={saveScheduleAction} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
@@ -185,65 +182,42 @@ export default function ScheduleForm({ scheduleId, initial, defaultCenter, title
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="block text-xs font-black uppercase tracking-widest text-slate-400">API mode</label>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Results</span>
-            <div
-              role="group"
-              aria-label="Results per point"
-              title={queueMode === 'live' ? 'Live costs the same at either depth, so it always returns the top 20.' : undefined}
-              className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
-            >
-              {([10, 20] as const).map((d) => {
-                const on = effectiveDepth === d;
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    aria-pressed={on}
-                    disabled={queueMode === 'live'}
-                    onClick={() => setDepth(d)}
-                    className={`px-2.5 py-1 text-[10px] font-black transition-colors disabled:cursor-not-allowed ${
-                      on
-                        ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
-                        : 'bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                    }`}
-                  >
-                    Top {d}
-                  </button>
-                );
-              })}
-            </div>
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-400">Results per point</label>
+          <div
+            role="group"
+            aria-label="Results per point"
+            className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+          >
+            {([10, 20] as const).map((d) => {
+              const on = depth === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setDepth(d)}
+                  className={`px-2.5 py-1 text-[10px] font-black transition-colors ${
+                    on
+                      ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
+                      : 'bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Top {d}
+                </button>
+              );
+            })}
           </div>
         </div>
-        <input type="hidden" name="queue_mode" value={queueMode} />
-        <input type="hidden" name="depth" value={effectiveDepth} />
-        <div className="grid grid-cols-3 gap-2">
-          {QUEUE_MODES.map((mode) => {
-            const active = queueMode === mode.value;
-            const perRun = points * mode.cost[effectiveDepth];
-            return (
-              <button
-                key={mode.value}
-                type="button"
-                onClick={() => setQueueMode(mode.value)}
-                className={`flex flex-col gap-0.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                  active
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
-                }`}
-              >
-                <span className={`text-xs font-black ${active ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                  {mode.label}
-                </span>
-                <span className={`text-[10px] font-mono ${active ? 'text-blue-500' : 'text-slate-400'}`}>${perRun.toFixed(4)} / scan</span>
-                <span className="text-[10px] text-slate-400">≈ ${(perRun * runsPerMonth(frequency)).toFixed(2)} / month</span>
-              </button>
-            );
-          })}
+        <input type="hidden" name="queue_mode" value="standard" />
+        <input type="hidden" name="depth" value={depth} />
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-2.5 rounded-xl border border-blue-500 bg-blue-50 dark:bg-blue-950">
+          <span className="text-xs font-black text-blue-700 dark:text-blue-400">
+            <span className="font-mono text-blue-500">${perRun.toFixed(4)}</span> / scan
+          </span>
+          <span className="text-[10px] text-slate-400">≈ ${(perRun * runsPerMonth(frequency)).toFixed(2)} / month · {SCAN_WAIT}</span>
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          Standard is the cheapest and nobody waits on an automated scan, so it&apos;s the default. Results land in Grid Search History like a manual scan.
+          Results land in Grid Search History like a manual scan.
         </p>
       </div>
 
