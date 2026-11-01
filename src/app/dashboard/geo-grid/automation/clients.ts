@@ -1,4 +1,4 @@
-import type { GridSchedule } from '@/lib/db';
+import type { GridSchedule, GridSearchEntry } from '@/lib/db';
 
 const CLIENT_PAGE = '/dashboard/geo-grid/automation/client';
 
@@ -70,4 +70,30 @@ export function scanReportUrl(scanIds: string[]): string {
 /** Print-ready report of every scan a client's schedules ran on one Pacific-time day ("YYYY-MM-DD"). */
 export function clientDayReportUrl(client: string, day: string): string {
   return `${REPORT_PAGE}?client=${encodeURIComponent(normalizeClientName(client))}&day=${day}`;
+}
+
+export interface ArpTrend {
+  /** Average rank where found in the latest finished run; null if the business wasn't found at any point. */
+  arp: number | null;
+  /** Previous finished run's ARP, when there is one to compare with. */
+  previous: number | null;
+  /** previous − latest, so positive means the rank number dropped, i.e. it got better. Null if either side is missing. */
+  improvement: number | null;
+  /** When the run the ARP comes from ran. */
+  ts: number;
+  /** True when a newer run timed out or is still going, so this ARP is from an older run. */
+  olderRun: boolean;
+}
+
+/**
+ * ARP of a schedule's latest finished run and how it moved since the run before. `runs` is newest
+ * first (getGridSearchesBySchedule); still-running and timed-out (partial) runs are skipped.
+ */
+export function arpTrend(runs: Pick<GridSearchEntry, 'ts' | 'status' | 'summary'>[]): ArpTrend | null {
+  const done = runs.filter((r) => r.status === 'done' && r.summary);
+  if (done.length === 0) return null;
+  const arp = done[0].summary!.avgRank;
+  const previous = done.length > 1 ? done[1].summary!.avgRank : null;
+  const improvement = arp !== null && previous !== null ? Math.round((previous - arp) * 10) / 10 : null;
+  return { arp, previous, improvement, ts: done[0].ts, olderRun: runs[0] !== done[0] };
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { GridSchedule } from '@/lib/db';
-import { groupSchedulesByClient, schedulesForClient, clientUrl, normalizeClientName } from './clients';
+import { groupSchedulesByClient, schedulesForClient, clientUrl, normalizeClientName, arpTrend } from './clients';
 
 let nextId = 1;
 function sched(over: Partial<GridSchedule>): GridSchedule {
@@ -48,5 +48,24 @@ describe('client names', () => {
   it('tidies spacing and builds an encoded link', () => {
     expect(normalizeClientName('  Arctic   Pools & Spas ')).toBe('Arctic Pools & Spas');
     expect(clientUrl('Arctic Pools & Spas')).toBe('/dashboard/geo-grid/automation/client?name=Arctic%20Pools%20%26%20Spas');
+  });
+});
+
+describe('arpTrend', () => {
+  const run = (status: 'done' | 'pending' | 'error', avgRank: number | null, ts = 0) => ({
+    ts, status, summary: { totalPoints: 9, foundCount: 9, avgRank, top3Count: 0, ato: 0 },
+  });
+  it('compares the latest finished run with the one before, skipping running and partial runs', () => {
+    expect(arpTrend([run('pending', 1, 4), run('done', 5, 3), run('error', 9, 2), run('done', 5.4, 1)]))
+      .toEqual({ arp: 5, previous: 5.4, improvement: 0.4, ts: 3, olderRun: true });
+    expect(arpTrend([run('done', 5, 3)])!.olderRun).toBe(false);
+  });
+  it('reports a worse rank as a negative improvement', () => {
+    expect(arpTrend([run('done', 6.2), run('done', 5.0)])!.improvement).toBe(-1.2);
+  });
+  it('has no comparison for a first run or when the business was not found', () => {
+    expect(arpTrend([run('done', 3)])).toMatchObject({ arp: 3, previous: null, improvement: null });
+    expect(arpTrend([run('done', null), run('done', 3)])!.improvement).toBeNull();
+    expect(arpTrend([run('pending', null)])).toBeNull();
   });
 });

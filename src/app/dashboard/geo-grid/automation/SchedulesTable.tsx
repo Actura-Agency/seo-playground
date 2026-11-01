@@ -3,7 +3,7 @@ import { describeSchedule, formatScheduleDate } from '../../local-finder/grid-sc
 import DeleteScheduleButton from './DeleteScheduleButton';
 import PendingButton from '@/components/PendingButton';
 import { toggleScheduleAction } from './actions';
-import { scanReportUrl } from './clients';
+import { arpTrend, scanReportUrl, type ArpTrend } from './clients';
 
 function StatusBadge({ s }: { s: GridSchedule }) {
   const map: Record<string, { text: string; cls: string }> = {
@@ -18,6 +18,36 @@ function StatusBadge({ s }: { s: GridSchedule }) {
     <span className={`text-[10px] font-black border px-1.5 py-0.5 rounded ${badge.cls}`} title={s.last_error ?? undefined}>
       {badge.text}
     </span>
+  );
+}
+
+/** Latest ARP (average rank where found; lower is better) and its move since the previous run. */
+function ArpCell({ trend }: { trend: ArpTrend | null }) {
+  if (!trend) return <span className="text-slate-400">—</span>;
+  const { arp, improvement, previous } = trend;
+  return (
+    <div className="max-sm:inline-block max-sm:align-top" title="Average rank where found (lower is better)">
+      {arp === null ? (
+        <p className="text-[12px] text-slate-500">Not found</p>
+      ) : (
+        <p className="font-black text-slate-800 dark:text-slate-100 tabular-nums">{arp.toFixed(1)}</p>
+      )}
+      {improvement !== null && previous !== null && (
+        improvement === 0 ? (
+          <p className="text-[10px] font-bold text-slate-400" title={`Same as the previous run (${previous.toFixed(1)})`}>no change</p>
+        ) : (
+          <p
+            className={`text-[10px] font-black tabular-nums ${improvement > 0 ? 'text-emerald-600' : 'text-red-600'}`}
+            title={`Previous run: ${previous.toFixed(1)}`}
+          >
+            {improvement > 0 ? '▲' : '▼'} {Math.abs(improvement).toFixed(1)} {improvement > 0 ? 'better' : 'worse'}
+          </p>
+        )
+      )}
+      {trend.olderRun && (
+        <p className="text-[10px] text-slate-400">from {formatScheduleDate(trend.ts).split(',').slice(0, 2).join(',')}</p>
+      )}
+    </div>
   );
 }
 
@@ -43,6 +73,7 @@ export default function SchedulesTable({ schedules, title = 'Schedules' }: { sch
                 <th className="px-5 py-2.5">Name · keyword</th>
                 <th className="px-3 py-2.5">Frequency</th>
                 <th className="px-3 py-2.5">Last scan</th>
+                <th className="px-3 py-2.5" title="Average rank where found in the latest run (lower is better)">ARP</th>
                 <th className="px-3 py-2.5">Next scan</th>
                 <th className="px-3 py-2.5">Status</th>
                 <th className="px-5 py-2.5" />
@@ -53,7 +84,7 @@ export default function SchedulesTable({ schedules, title = 'Schedules' }: { sch
                 const runs = getGridSearchesBySchedule(s.id, 10);
                 return (
                   <tr key={s.id} className="align-top max-sm:block max-sm:px-5 max-sm:py-3">
-                    <td className={`px-5 py-3 min-w-[220px] ${CELL}`}>
+                    <td className={`px-5 py-3 min-w-[180px] ${CELL}`}>
                       <p className="font-bold text-slate-800 dark:text-slate-200">{s.label}</p>
                       <p className="text-[13px] text-slate-600 dark:text-slate-300">&ldquo;{s.keyword}&rdquo;</p>
                       <p className="text-[11px] text-slate-400">
@@ -71,7 +102,7 @@ export default function SchedulesTable({ schedules, title = 'Schedules' }: { sch
                                   {formatScheduleDate(r.ts)}
                                   {r.status === 'pending' ? ' · pending'
                                     : r.status === 'error' ? ' · timed out (partial)'
-                                      : r.summary ? ` · ${r.summary.ato}% · ${r.summary.foundCount}/${r.summary.totalPoints} found` : ''}
+                                      : r.summary ? ` · ARP ${r.summary.avgRank?.toFixed(1) ?? '—'} · ${r.summary.foundCount}/${r.summary.totalPoints} found` : ''}
                                 </a>
                                 {r.status !== 'pending' && (
                                   <a
@@ -90,7 +121,7 @@ export default function SchedulesTable({ schedules, title = 'Schedules' }: { sch
                         </details>
                       )}
                     </td>
-                    <td className={`px-3 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300 ${CELL}`}><span className={MOBILE_LABEL}>Runs</span>{describeSchedule(s)}</td>
+                    <td className={`px-3 py-3 min-w-[120px] text-slate-600 dark:text-slate-300 ${CELL}`}><span className={MOBILE_LABEL}>Runs</span>{describeSchedule(s)}</td>
                     <td className={`px-3 py-3 whitespace-nowrap ${CELL}`}>
                       <span className={MOBILE_LABEL}>Last scan</span>
                       {s.last_run_at ? (
@@ -104,12 +135,16 @@ export default function SchedulesTable({ schedules, title = 'Schedules' }: { sch
                           )}
                           <StatusBadge s={s} />
                           {s.last_status === 'failed' && s.last_error && (
-                            <p className="text-[11px] text-red-500 whitespace-normal max-w-[220px]">{s.last_error}</p>
+                            <p className="text-[11px] text-red-500 whitespace-normal max-w-[170px]">{s.last_error}</p>
                           )}
                         </div>
                       ) : (
                         <StatusBadge s={s} />
                       )}
+                    </td>
+                    <td className={`px-3 py-3 whitespace-nowrap ${CELL}`}>
+                      <span className={MOBILE_LABEL}>ARP</span>
+                      <ArpCell trend={arpTrend(runs)} />
                     </td>
                     <td className={`px-3 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300 ${CELL}`}>
                       <span className={MOBILE_LABEL}>Next scan</span>

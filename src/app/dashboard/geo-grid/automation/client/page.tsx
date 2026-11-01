@@ -37,7 +37,7 @@ export default async function GridClientPage({ searchParams }: { searchParams: P
   const days = [...dayCounts.entries()];
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-6xl">
       <div className="space-y-2">
         {backLink}
         <div className="flex flex-wrap items-end justify-between gap-3">
