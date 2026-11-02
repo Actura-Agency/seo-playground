@@ -5,7 +5,7 @@ import {
   APIProvider, Map, AdvancedMarker, InfoWindow, useMap, useAdvancedMarkerRef,
 } from '@vis.gl/react-google-maps';
 import { Building2 } from 'lucide-react';
-import type { GridPoint } from '@/lib/db';
+import type { GridPoint, GridTaskPoint } from '@/lib/db';
 import { competitorKey } from './grid-insights';
 
 /** The highlighted competitor's real business address, when known — a distinct pin from the rank grid. */
@@ -44,6 +44,8 @@ interface Props {
    * map is WebGL, which browsers can print blank).
    */
   printView?: boolean;
+  /** Points of a still-running scan that haven't come back yet, drawn as gray dashed "loading" dots. */
+  pendingPoints?: Pick<GridTaskPoint, 'row' | 'col' | 'lat' | 'lng'>[];
 }
 
 // One distinct shade per rank 1-8 (a green-to-red gradient) so adjacent markers on the map read
@@ -229,6 +231,25 @@ function GridMarker({ point, isCenter, cellPx, fontSize, target, highlightKey }:
   );
 }
 
+/** A point that hasn't come back from DataForSEO yet: a hollow gray dot with a pulsing center. */
+function PendingMarker({ lat, lng, cellPx }: { lat: number; lng: number; cellPx: number }) {
+  return (
+    <AdvancedMarker position={{ lat, lng }} title="Still loading">
+      <div
+        style={{
+          width: cellPx, height: cellPx,
+          borderRadius: '50%',
+          border: '2px dashed #64748b',
+          background: 'rgba(255,255,255,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <div className="animate-pulse" style={{ width: cellPx / 3, height: cellPx / 3, borderRadius: '50%', background: '#94a3b8' }} />
+      </div>
+    </AdvancedMarker>
+  );
+}
+
 /** True below Tailwind's `sm` breakpoint (640px). */
 function useIsNarrow(): boolean {
   const [narrow, setNarrow] = useState(false);
@@ -242,7 +263,7 @@ function useIsNarrow(): boolean {
   return narrow;
 }
 
-export default function GridMap({ points, gridSize, target, highlightKey, highlightName, highlightLocation, locatingBusiness, printView }: Props) {
+export default function GridMap({ points, gridSize, target, highlightKey, highlightName, highlightLocation, locatingBusiness, printView, pendingPoints = [] }: Props) {
   const half = Math.floor(gridSize / 2);
   const geoPoints = useMemo(() => points.filter((p) => p.lat != null && p.lng != null), [points]);
   // Phones: smaller pins for big grids so neighbors don't overlap on a narrow map.
@@ -256,9 +277,10 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
   const heightCls = printView ? 'h-[430px]' : 'h-[420px] sm:h-[520px]';
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
+  // Loading dots count toward the initial fit too, so a missing corner point isn't off-screen when it lands.
   const boundsPoints = useMemo(
-    () => geoPoints.map((p) => ({ lat: p.lat!, lng: p.lng! })),
-    [geoPoints],
+    () => [...geoPoints, ...pendingPoints].map((p) => ({ lat: p.lat!, lng: p.lng! })),
+    [geoPoints, pendingPoints],
   );
 
   if (geoPoints.length === 0 || !apiKey) {
@@ -317,6 +339,9 @@ export default function GridMap({ points, gridSize, target, highlightKey, highli
                 target={target}
                 highlightKey={highlightKey}
               />
+            ))}
+            {pendingPoints.map((p) => (
+              <PendingMarker key={`pending-${p.row}-${p.col}`} lat={p.lat} lng={p.lng} cellPx={cellPx} />
             ))}
             {highlightLocation && (
               <BusinessLocationMarker lat={highlightLocation.lat} lng={highlightLocation.lng} />

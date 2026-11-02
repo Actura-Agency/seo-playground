@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { GridQueueMode } from '@/lib/db';
+import { canShowEarly } from './grid-early';
 
 interface Props {
   searchId: string;
@@ -68,7 +69,8 @@ export default function GridPending({ searchId, totalPoints, queueMode, keyword,
       const res = await fetch(`/api/grid-check/${searchId}`);
       const data = await res.json() as { status: string; ready?: number; total?: number; error?: string };
       setLastChecked(new Date());
-      if (data.status === 'done') {
+      // Done, or close enough (see canShowEarly): reload so the page swaps this card for the map.
+      if (data.status === 'done' || canShowEarly(data.ready ?? 0, totalPoints)) {
         doneRef.current = true;
         router.refresh();
         return;
@@ -84,7 +86,7 @@ export default function GridPending({ searchId, totalPoints, queueMode, keyword,
       checkingRef.current = false;
       setChecking(false);
     }
-  }, [searchId, router]);
+  }, [searchId, router, totalPoints]);
 
   const interval = POLL_INTERVAL[queueMode];
 

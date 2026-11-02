@@ -1,11 +1,13 @@
 import { redirect } from 'next/navigation';
 import {
-  getCredentials, getSetting, getGridHistory, getGridEntry, getGridResults, getGridSchedule,
-  type GridSearchEntry, type GridPoint, type GridQueueMode,
+  getCredentials, getSetting, getGridHistory, getGridEntry, getGridResults, getGridSchedule, getGridProgress,
+  type GridSearchEntry, type GridPoint, type GridQueueMode, type GridTaskPoint,
 } from '@/lib/db';
 import LocalFinderForm from '../local-finder/LocalFinderForm';
 import GridResults from '../local-finder/GridResults';
 import GridPending from '../local-finder/GridPending';
+import GridFinishing from '../local-finder/GridFinishing';
+import { canShowEarly } from '../local-finder/grid-early';
 import HistorySidebar from '@/components/HistorySidebar';
 import { stableGridId, type GridDepth } from '../local-finder/grid-api';
 import { startGridScan } from '../local-finder/grid-scan';
@@ -44,6 +46,8 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
   let gridResults: GridPoint[] | null = null;
   let gridEntry: GridSearchEntry | null = null;
   let gridPending: { id: string; totalPoints: number; queueMode: GridQueueMode } | null = null;
+  // A still-running scan with 98%+ of points in (or one left): shown now, with its missing points.
+  let gridFinishing: { pendingPoints: GridTaskPoint[] } | null = null;
   let gridError: string | null = null;
 
   // Load from history
@@ -53,7 +57,14 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
       gridError = 'Search not found.';
     } else if (entry.status === 'pending') {
       gridEntry = entry;
-      gridPending = { id: entry.id, totalPoints: entry.grid_size ** 2, queueMode: entry.queue_mode };
+      const totalPoints = entry.grid_size ** 2;
+      const progress = getGridProgress(entry.id);
+      if (progress && canShowEarly(progress.results.length, totalPoints)) {
+        gridResults = progress.results;
+        gridFinishing = { pendingPoints: progress.pendingTasks };
+      } else {
+        gridPending = { id: entry.id, totalPoints, queueMode: entry.queue_mode };
+      }
     } else {
       gridResults = getGridResults(gridHistoryId);
       gridEntry = entry;
@@ -205,7 +216,10 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
                 startedAt={gridEntry.ts}
               />
             )}
-            {gridResults && gridEntry && (
+            {gridFinishing && gridResults && gridEntry && (
+              <GridFinishing searchId={gridEntry.id} ready={gridResults.length} totalPoints={gridEntry.grid_size ** 2} />
+            )}
+            {gridResults && gridEntry && !gridFinishing && (
               <p className="text-[11px] text-slate-400 mb-2">
                 Scanned {formatDate(gridEntry.ts)} PT
                 {gridEntry.schedule_id !== undefined && (
@@ -233,6 +247,7 @@ export default async function GeoGridPage({ searchParams }: { searchParams: Prom
                 cost={gridEntry.cost}
                 center={gridEntry.center}
                 language={gridEntry.language}
+                pendingPoints={gridFinishing?.pendingPoints}
               />
             )}
           </div>

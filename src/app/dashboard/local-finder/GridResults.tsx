@@ -1,7 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import type { GridPoint } from '@/lib/db';
+import type { GridPoint, GridTaskPoint } from '@/lib/db';
 import { computeCompetitors, computeGridSummary, computeRingStats, type CompetitorSummary } from './grid-insights';
 
 const GridMap = lazy(() => import('./GridMap'));
@@ -16,6 +16,8 @@ interface Props {
   /** Grid center "lat,lng" and search language — needed only for the on-demand business-location lookup. */
   center: string;
   language: string;
+  /** A still-running scan's missing points, shown on the map as loading dots. */
+  pendingPoints?: GridTaskPoint[];
 }
 
 // One distinct shade per rank 1-8 (a green-to-red gradient) so adjacent markers read as visibly
@@ -63,8 +65,9 @@ function MetricBadges({ coverage, arp, solv }: { coverage: number; arp: number |
   );
 }
 
-export default function GridResults({ results, gridSize, spacingKm, keyword, target, cost, center, language }: Props) {
-  const [highlight, setHighlight] = useState<CompetitorSummary | null>(null);
+export default function GridResults({ results, gridSize, spacingKm, keyword, target, cost, center, language, pendingPoints }: Props) {
+  // Only the key is kept, so the competitor's stats stay current when a still-running scan gains points.
+  const [highlightKey, setHighlightKey] = useState<string | null>(null);
   const [highlightLocation, setHighlightLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locatingBusiness, setLocatingBusiness] = useState(false);
   // Only set once the user explicitly clicks "View location" — the lookup costs real DataForSEO
@@ -80,7 +83,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
     setHighlightLocation(null);
     setLocatingBusiness(false);
     setLocationRequestedFor(null);
-  }, [highlight?.key]);
+  }, [highlightKey]);
 
   // Starts a Priority-queue business-location lookup for the requested competitor and polls for
   // it, showing a small spinner (via locatingBusiness) while waiting. Only runs when the user has
@@ -148,6 +151,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
   const { foundCount, top3Count: top3, coverage, arp, solv } = computeGridSummary(results);
 
   const competitors = useMemo(() => computeCompetitors(results), [results]);
+  const highlight: CompetitorSummary | null = highlightKey ? competitors.find((c) => c.key === highlightKey) ?? null : null;
   const topCompetitors = competitors.slice(0, 5);
   const ringStats = useMemo(() => computeRingStats(results, gridSize, spacingKm), [results, gridSize, spacingKm]);
 
@@ -230,7 +234,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
                   <span className="text-xs font-black text-slate-600 dark:text-slate-300 tabular-nums w-10 text-right">{Math.round(c.solv)}%</span>
                   <button
                     type="button"
-                    onClick={() => setHighlight(isActive ? null : c)}
+                    onClick={() => setHighlightKey(isActive ? null : c.key)}
                     className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg shrink-0 transition-colors ${
                       isActive
                         ? 'bg-blue-600 text-white'
@@ -280,7 +284,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
             {highlight ? (
               <button
                 type="button"
-                onClick={() => setHighlight(null)}
+                onClick={() => setHighlightKey(null)}
                 className="text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors"
               >
                 ← Back to target
@@ -305,6 +309,12 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
             <div className="w-3 h-3 rounded-sm border-2 border-dashed border-slate-400" />
             <span className="text-[10px] font-bold text-slate-500">Center</span>
           </div>
+          {pendingPoints && pendingPoints.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full border-2 border-dashed border-slate-500" />
+              <span className="text-[10px] font-bold text-slate-500">Still loading</span>
+            </div>
+          )}
         </div>
 
         {/* Map */}
@@ -322,6 +332,7 @@ export default function GridResults({ results, gridSize, spacingKm, keyword, tar
             highlightName={highlight?.name}
             highlightLocation={highlightLocation}
             locatingBusiness={locatingBusiness}
+            pendingPoints={pendingPoints}
           />
         </Suspense>
       </div>
